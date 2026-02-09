@@ -1,29 +1,16 @@
 import { useMemo, useState } from 'react'
-import ReportCard from '../components/cards/ReportCard'
 import StatCard from '../components/cards/StatCard'
 import Badge from '../components/ui/Badge'
-import { reportCards, reportList, reportSummary } from '../data/mockReports'
+import {  reportSummary } from '../data/mockReports'
 import { mockTrades } from '../data/mockTrades'
 import Modal from '../components/ui/Modal'
 
 const Reports = () => {
-  const [reports, setReports] = useState(reportList)
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [dayFilter, setDayFilter] = useState<'all' | 'sat' | 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri'>('all')
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily')
   const [summaryOpen, setSummaryOpen] = useState(false)
-
-  const deleteReports = (scope: 'all' | 'complete' | 'processing') => {
-    setReports((prev) => {
-      if (scope === 'all') return []
-      return prev.filter((r) => (scope === 'complete' ? r.status !== 'مكتمل' : r.status !== 'قيد المعالجة'))
-    })
-  }
-
-  const deleteReportById = (id: string) => {
-    setReports((prev) => prev.filter((r) => r.id !== id))
-  }
 
   const breakdown = [
     { id: 'daily', title: 'يومي', change: '+1.8%', profit: '$3,240', trades: 12, color: 'emerald' },

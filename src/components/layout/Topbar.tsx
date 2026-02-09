@@ -1,5 +1,4 @@
 import { useEffect, useState, type FC } from 'react'
-import Badge from '../ui/Badge'
 
 type TopbarProps = {
   title: string

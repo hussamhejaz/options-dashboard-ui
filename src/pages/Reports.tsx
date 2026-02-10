@@ -7,7 +7,6 @@ import logo from '../assets/images/logo.jpeg'
 const Reports = () => {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [dayFilter, setDayFilter] = useState<'all' | 'sat' | 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri'>('all')
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily')
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [monthFilter, setMonthFilter] = useState<'all' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'>('all')
@@ -48,18 +47,17 @@ const Reports = () => {
     return tradeReportsData.filter((t) => {
       const afterFrom = fromDate ? t.reportDate >= fromDate : true
       const beforeTo = toDate ? t.reportDate <= toDate : true
-      const byDay = dayFilter === 'all' ? true : t.dayKey === dayFilter
       const monthOk =
         viewMode === 'monthly' && monthFilter !== 'all'
           ? Number(t.reportDate.slice(5, 7)) === Number(monthFilter)
           : true
-      return afterFrom && beforeTo && byDay && monthOk
+      return afterFrom && beforeTo && monthOk
     })
-  }, [tradeReportsData, fromDate, toDate, dayFilter, viewMode, monthFilter])
+  }, [tradeReportsData, fromDate, toDate, viewMode, monthFilter])
 
   useEffect(() => {
     setPage(1)
-  }, [filteredTradeReports.length, viewMode, fromDate, toDate, dayFilter])
+  }, [filteredTradeReports.length, viewMode, fromDate, toDate])
 
   const pageCount = Math.max(1, Math.ceil(filteredTradeReports.length / pageSize))
   const pagedReports = filteredTradeReports.slice((page - 1) * pageSize, page * pageSize)
@@ -105,72 +103,6 @@ const Reports = () => {
     }
     setFromDate(toStr(from))
     setToDate(toDateStr)
-  }
-
-  const toCSV = (rows: any[]) => {
-    const header = [
-      'symbol',
-      'type',
-      'reportDate',
-      'expiry',
-      'strike',
-      'entryPrice',
-      'currentPrice',
-      'pl',
-      'status',
-      'contracts'
-    ]
-    const lines = rows.map((r) =>
-      [
-        r.symbol,
-        r.type,
-        r.reportDate,
-        r.expiry,
-        r.strike,
-        r.entryPrice,
-        r.currentPrice,
-        r.pl,
-        r.status,
-        r.contracts
-      ].join(',')
-    )
-    return [header.join(','), ...lines].join('\n')
-  }
-
-  const downloadCSV = (filename: string, rows: any[]) => {
-    if (!rows.length) return
-    const blob = new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', filename)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
-
-  const exportReports = (scope: 'current' | 'daily' | 'weekly' | 'monthly') => {
-    const today = new Date()
-    const pad = (n: number) => n.toString().padStart(2, '0')
-    const toStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    let data = filteredTradeReports
-    if (scope !== 'current') {
-      let from = new Date(today)
-      if (scope === 'daily') from = today
-      if (scope === 'weekly') {
-        from = new Date(today)
-        from.setDate(today.getDate() - 6)
-      }
-      if (scope === 'monthly') {
-        from = new Date(today)
-        from.setDate(today.getDate() - 29)
-      }
-      const fromStr = toStr(from)
-      const toStrToday = toStr(today)
-      data = tradeReportsData.filter((t) => t.reportDate >= fromStr && t.reportDate <= toStrToday)
-    }
-    downloadCSV(`reports-${scope}.csv`, data)
   }
 
   const summaryStats = useMemo(() => {

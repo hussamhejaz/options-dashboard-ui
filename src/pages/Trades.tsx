@@ -10,8 +10,8 @@ import type { Trade, TradeStatus, TradeType } from '../types/trade'
 const Trades = () => {
   const [trades, setTrades] = useState<Trade[]>(mockTrades)
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState<'all' | TradeType>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | TradeStatus>('all')
+  const [typeFilter] = useState<'all' | TradeType>('all')
+  const [statusFilter] = useState<'all' | TradeStatus>('all')
   const [openModal, setOpenModal] = useState(false)
   const [quickSymbol, setQuickSymbol] = useState('')
   const [quickType, setQuickType] = useState<TradeType>('CALL')

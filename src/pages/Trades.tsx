@@ -18,9 +18,7 @@ const Trades = () => {
   const [quickStrike, setQuickStrike] = useState('')
   const [quickExpiry, setQuickExpiry] = useState('')
 
-  const deleteTradeById = (id: string) => {
-    setTrades((prev) => prev.filter((t) => t.id !== id))
-  }
+
 
   const filtered = useMemo(() => {
     return trades.filter((trade) => {

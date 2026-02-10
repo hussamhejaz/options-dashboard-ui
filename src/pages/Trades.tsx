@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import TradesTable from '../components/tables/TradesTable'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Select from '../components/ui/Select'
@@ -14,16 +13,10 @@ const Trades = () => {
   const [typeFilter, setTypeFilter] = useState<'all' | TradeType>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | TradeStatus>('all')
   const [openModal, setOpenModal] = useState(false)
-
-  const deleteTrades = (scope: 'all' | 'win' | 'loss') => {
-    setTrades((prev) => {
-      if (scope === 'all') return []
-      return prev.filter((t) => {
-        const isWin = t.pl >= 0
-        return scope === 'win' ? !isWin : isWin
-      })
-    })
-  }
+  const [quickSymbol, setQuickSymbol] = useState('')
+  const [quickType, setQuickType] = useState<TradeType>('CALL')
+  const [quickStrike, setQuickStrike] = useState('')
+  const [quickExpiry, setQuickExpiry] = useState('')
 
   const deleteTradeById = (id: string) => {
     setTrades((prev) => prev.filter((t) => t.id !== id))
@@ -65,6 +58,30 @@ const Trades = () => {
     e.currentTarget.reset()
   }
 
+  const handleQuickAdd = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const symbol = quickSymbol.trim().toUpperCase()
+    const strikeNum = Number(quickStrike)
+    if (!symbol || !quickExpiry || Number.isNaN(strikeNum)) return
+    const newTrade: Trade = {
+      id: crypto.randomUUID(),
+      symbol,
+      type: quickType,
+      strike: strikeNum,
+      expiry: quickExpiry,
+      entryPrice: strikeNum,
+      currentPrice: strikeNum,
+      pl: 0,
+      status: 'open',
+      contracts: 1
+    }
+    setTrades((prev) => [newTrade, ...prev])
+    setQuickSymbol('')
+    setQuickStrike('')
+    setQuickExpiry('')
+    setQuickType('CALL')
+  }
+
   return (
     <div className="space-y-6" dir="rtl">
       <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
@@ -72,62 +89,46 @@ const Trades = () => {
           <h2 className="text-2xl font-bold text-white">الصفقات</h2>
           <p className="text-slate-400 text-sm mt-1">إدارة الصفقات الحالية والمغلقة مع تصفية سريعة.</p>
         </div>
-        <Button onClick={() => setOpenModal(true)}>إضافة صفقة</Button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-4">
-        <Input
-          placeholder="ابحث بالرمز مثل TSLA..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as 'all' | TradeType)}>
-          <option value="all">النوع (الكل)</option>
-          <option value="CALL">CALL</option>
-          <option value="PUT">PUT</option>
-        </Select>
-        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | TradeStatus)}>
-          <option value="all">الحالة (الكل)</option>
-          <option value="open">مفتوحة</option>
-          <option value="closed">مغلقة</option>
-        </Select>
-        <Button variant="secondary" onClick={() => { setSearch(''); setTypeFilter('all'); setStatusFilter('all') }}>إعادة تعيين</Button>
-      </div>
-
-      {trades.length > 0 && (
-        <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">إدارة سريعة</h3>
-            <span className="text-xs text-slate-400">حذف حسب الربحية</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <button
-              type="button"
-              onClick={() => deleteTrades('win')}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-500/10 px-3 py-3 text-emerald-200 font-semibold hover:border-emerald-400 hover:bg-emerald-500/15 transition"
-            >
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              حذف الصفقات الرابحة
-            </button>
-            <button
-              type="button"
-              onClick={() => deleteTrades('loss')}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/60 bg-red-500/10 px-3 py-3 text-red-200 font-semibold hover:border-red-400 hover:bg-red-500/15 transition"
-            >
-              <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-              حذف الصفقات الخاسرة
-            </button>
-            <button
-              type="button"
-              onClick={() => deleteTrades('all')}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-3 text-slate-200 font-semibold hover:border-slate-500 hover:bg-slate-800 transition"
-            >
-              <span className="h-2.5 w-2.5 rounded-full bg-slate-300" />
-              حذف كل الصفقات
-            </button>
-          </div>
+        <div className="w-full md:w-80">
+          <Input
+            placeholder="ابحث عن الصفقات (مثلاً TSLA أو CALL)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-      )}
+      </div>
+
+      <form
+        className="grid grid-cols-1 md:grid-cols-5 gap-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-4"
+        onSubmit={handleQuickAdd}
+      >
+        <Input
+          placeholder="ادخل الرمز مثل TSLA"
+          value={quickSymbol}
+          onChange={(e) => setQuickSymbol(e.target.value)}
+          required
+        />
+        <Select value={quickType} onChange={(e) => setQuickType(e.target.value as TradeType)}>
+          <option value="CALL">شراء (CALL)</option>
+          <option value="PUT">بيع (PUT)</option>
+        </Select>
+        <Input
+          type="number"
+          step="0.1"
+          placeholder="السترايك"
+          value={quickStrike}
+          onChange={(e) => setQuickStrike(e.target.value)}
+          required
+        />
+        <Input
+          type="date"
+          placeholder="تاريخ الانتهاء"
+          value={quickExpiry}
+          onChange={(e) => setQuickExpiry(e.target.value)}
+          required
+        />
+        <Button type="submit">إرسال</Button>
+      </form>
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -159,15 +160,19 @@ const Trades = () => {
                       <span className="text-right">المبلغ</span>
                       <span className="text-right">أعلى</span>
                     </div>
-                    <div className="grid grid-cols-5 text-sm font-semibold">
-                      <span className="text-slate-200 text-right">{trade.entryPrice.toFixed(2)}</span>
-                      <span className="text-emerald-400 text-right">{trade.currentPrice.toFixed(2)}</span>
-                      <span className={`${isProfit ? 'text-emerald-400' : 'text-red-400'} text-right`}>
-                        {isProfit ? '+' : ''}
-                        {trade.pl.toFixed(2)}%
-                      </span>
-                      <span className="text-emerald-400 text-right">$0.00</span>
-                      <span className="text-slate-200 text-right">{trade.strike.toFixed(2)}</span>
+              <div className="grid grid-cols-5 text-sm font-semibold">
+                <span className="text-slate-200 text-right">{trade.entryPrice.toFixed(2)}</span>
+                <span className="text-emerald-400 text-right">{trade.currentPrice.toFixed(2)}</span>
+                <span className={`${isProfit ? 'text-emerald-400' : 'text-red-400'} text-right`}>
+                  {isProfit ? '+' : ''}
+                  {trade.pl.toFixed(2)}%
+                </span>
+                <span className="text-emerald-400 text-right">
+                  ${((trade.currentPrice - trade.entryPrice) * trade.contracts * 100).toFixed(2)}
+                </span>
+                <span className="text-slate-200 text-right">
+                  {(trade.strike / 100).toFixed(2)}
+                </span>
                     </div>
                   </div>
 
@@ -204,7 +209,6 @@ const Trades = () => {
             })}
           </section>
 
-          <TradesTable trades={filtered} />
         </>
       )}
 

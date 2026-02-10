@@ -20,6 +20,7 @@ const TradesTable: FC<Props> = ({ trades }) => {
       <div className="md:hidden divide-y divide-slate-800/80">
         {trades.map((trade) => {
           const isProfit = trade.pl >= 0
+          const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts * 100
           return (
             <div key={trade.id} className="p-4 flex flex-col gap-3">
               <div className="flex items-center justify-between">
@@ -54,10 +55,15 @@ const TradesTable: FC<Props> = ({ trades }) => {
               </div>
               <div className="flex items-center justify-between pt-1">
                 <span className="text-xs text-slate-500">الربح/الخسارة</span>
-                <span className={`text-base font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {isProfit ? '+' : ''}
-                  {trade.pl.toFixed(2)}%
-                </span>
+                <div className="text-right">
+                  <span className={`block text-base font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {isProfit ? '+' : ''}
+                    {trade.pl.toFixed(2)}%
+                  </span>
+                  <span className="block text-[11px] text-slate-400">
+                    {isProfit ? '+' : ''}${profitValue.toFixed(2)}
+                  </span>
+                </div>
               </div>
             </div>
           )
@@ -82,6 +88,7 @@ const TradesTable: FC<Props> = ({ trades }) => {
           <tbody>
             {trades.map((trade, idx) => {
               const isProfit = trade.pl >= 0
+              const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts * 100
               return (
                 <tr
                   key={trade.id}
@@ -100,8 +107,16 @@ const TradesTable: FC<Props> = ({ trades }) => {
                   <td className="px-4 py-3 text-slate-200">{trade.expiry}</td>
                   <td className="px-4 py-3 text-slate-200">${trade.entryPrice.toFixed(2)}</td>
                   <td className="px-4 py-3 text-slate-200">${trade.currentPrice.toFixed(2)}</td>
-                  <td className={`px-4 py-3 font-semibold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {isProfit ? '+' : ''}{trade.pl.toFixed(2)}%
+                  <td className="px-4 py-3">
+                    <div className={`font-semibold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                      <span className="block">
+                        {isProfit ? '+' : ''}
+                        {trade.pl.toFixed(2)}%
+                      </span>
+                      <span className="block text-xs text-slate-400">
+                        {isProfit ? '+' : ''}${profitValue.toFixed(2)}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <Badge variant={trade.status === 'open' ? 'emerald' : 'gray'}>

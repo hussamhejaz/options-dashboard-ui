@@ -4,6 +4,7 @@ import Badge from '../ui/Badge'
 
 const TradeCard: FC<{ trade: Trade }> = ({ trade }) => {
   const isProfit = trade.pl >= 0
+  const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts
   return (
     <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 hover:border-emerald-500/40 transition shadow-lg space-y-3">
       <div className="flex items-center justify-between">
@@ -30,9 +31,14 @@ const TradeCard: FC<{ trade: Trade }> = ({ trade }) => {
       </div>
       <div className="flex items-center justify-between text-sm">
         <span className="text-slate-400">الربح / الخسارة</span>
-        <span className={`${isProfit ? 'text-emerald-400' : 'text-red-400'} font-semibold`}>
-          {isProfit ? '+' : ''}{trade.pl.toFixed(2)}%
-        </span>
+        <div className="text-right leading-tight">
+          <span className={`${isProfit ? 'text-emerald-400' : 'text-red-400'} font-semibold block`}>
+            {isProfit ? '+' : ''}{trade.pl.toFixed(2)}%
+          </span>
+          <span className="text-[11px] text-slate-400 block">
+            {isProfit ? '+' : ''}${profitValue.toFixed(2)}
+          </span>
+        </div>
       </div>
       <div className="flex justify-end">
         <Badge variant={trade.status === 'open' ? 'emerald' : 'gray'}>

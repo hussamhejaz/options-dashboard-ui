@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react'
-import StatCard from '../components/cards/StatCard'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import Badge from '../components/ui/Badge'
-import {  reportSummary } from '../data/mockReports'
 import { mockTrades } from '../data/mockTrades'
 import Modal from '../components/ui/Modal'
+import logo from '../assets/images/logo.jpeg'
 
 const Reports = () => {
   const [fromDate, setFromDate] = useState('')
@@ -11,6 +10,13 @@ const Reports = () => {
   const [dayFilter, setDayFilter] = useState<'all' | 'sat' | 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri'>('all')
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily')
   const [summaryOpen, setSummaryOpen] = useState(false)
+  const [monthFilter, setMonthFilter] = useState<'all' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'>('all')
+  const [page, setPage] = useState(1)
+  const pageSize = 5
+  const summaryRef = useRef<HTMLDivElement | null>(null)
+
+  const today = new Date()
+  const todayStr = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`
 
   const breakdown = [
     { id: 'daily', title: 'يومي', change: '+1.8%', profit: '$3,240', trades: 12, color: 'emerald' },
@@ -43,9 +49,32 @@ const Reports = () => {
       const afterFrom = fromDate ? t.reportDate >= fromDate : true
       const beforeTo = toDate ? t.reportDate <= toDate : true
       const byDay = dayFilter === 'all' ? true : t.dayKey === dayFilter
-      return afterFrom && beforeTo && byDay
+      const monthOk =
+        viewMode === 'monthly' && monthFilter !== 'all'
+          ? Number(t.reportDate.slice(5, 7)) === Number(monthFilter)
+          : true
+      return afterFrom && beforeTo && byDay && monthOk
     })
-  }, [tradeReportsData, fromDate, toDate, dayFilter])
+  }, [tradeReportsData, fromDate, toDate, dayFilter, viewMode, monthFilter])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filteredTradeReports.length, viewMode, fromDate, toDate, dayFilter])
+
+  const pageCount = Math.max(1, Math.ceil(filteredTradeReports.length / pageSize))
+  const pagedReports = filteredTradeReports.slice((page - 1) * pageSize, page * pageSize)
+
+  const loadHtml2Canvas = () => {
+    return new Promise<any>((resolve, reject) => {
+      if ((window as any).html2canvas) return resolve((window as any).html2canvas)
+      const script = document.createElement('script')
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
+      script.async = true
+      script.onload = () => resolve((window as any).html2canvas)
+      script.onerror = (err) => reject(err)
+      document.body.appendChild(script)
+    })
+  }
 
   const deleteTradeReportById = (id: string) => {
     setTradeReportsData((prev) => prev.filter((t) => t.id !== id))
@@ -59,6 +88,7 @@ const Reports = () => {
   // تغيير نطاق التاريخ حسب الاختيار (يومي/أسبوعي/شهري)
   const setPresetRange = (mode: 'daily' | 'weekly' | 'monthly') => {
     setViewMode(mode)
+    if (mode !== 'monthly') setMonthFilter('all')
     const today = new Date()
     const pad = (n: number) => n.toString().padStart(2, '0')
     const toStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -146,7 +176,10 @@ const Reports = () => {
   const summaryStats = useMemo(() => {
     const total = filteredTradeReports.length
     const wins = filteredTradeReports.filter((t) => t.pl >= 0).length
-    const net = filteredTradeReports.reduce((acc, t) => acc + (t.currentPrice - t.entryPrice) * t.contracts, 0)
+    const net = filteredTradeReports.reduce(
+      (acc, t) => acc + (t.currentPrice - t.entryPrice) * t.contracts * 100,
+      0
+    )
     const winRate = total ? Math.round((wins / total) * 100) : 0
     return { total, wins, net, winRate }
   }, [filteredTradeReports])
@@ -155,21 +188,10 @@ const Reports = () => {
     <div className="space-y-8" dir="rtl">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-white">التقارير</h2>
-          <p className="text-slate-400 text-sm mt-1">عرض وتحليل التقارير الدورية لأداء استراتيجيات الخيارات.</p>
+          <h2 className="text-2xl font-bold text-white">ملخص الأداء</h2>
+          <p className="text-slate-400 text-sm mt-1">عرض وتحليل الأداء الدوري لاستراتيجيات الخيارات.</p>
         </div>
       </div>
-
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">ملخص الأداء</h3>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {reportSummary.map((stat) => (
-            <StatCard key={stat.id} label={stat.label} value={stat.value} />
-          ))}
-        </div>
-      </section>
 
       <section className="rounded-2xl bg-slate-900/70 border border-slate-800 shadow-xl p-4 space-y-4">
         <div className="flex items-center justify-between">
@@ -230,8 +252,8 @@ const Reports = () => {
             <h3 className="text-lg font-semibold text-white">تقارير الصفقات حسب التاريخ</h3>
             <p className="text-sm text-slate-400">تصفية حسب يوم الأسبوع أو نطاق التاريخ.</p>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 w-full md:w-auto">
-            <div className="col-span-2 md:col-span-3 flex items-center gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 w-full md:w-auto">
+            <div className="col-span-1 md:col-span-2 flex items-center gap-2">
               {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -247,28 +269,19 @@ const Reports = () => {
                 </button>
               ))}
             </div>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400"
-              aria-label="من تاريخ"
-            />
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400"
-              aria-label="إلى تاريخ"
-            />
-            <button
-              type="button"
-              onClick={() => { setFromDate(''); setToDate(''); setDayFilter('all') }}
-              className="rounded-xl bg-slate-800/80 border border-slate-700 px-3 py-2 text-sm text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-            >
-              إعادة تعيين
-            </button>
-            <div className="col-span-2 md:col-span-6 flex flex-col md:flex-row gap-3">
+            {viewMode === 'monthly' && (
+              <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value as typeof monthFilter)}
+                className="rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400"
+              >
+                <option value="all">الشهر (الكل)</option>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={String(m)}>{`الشهر ${m}`}</option>
+                ))}
+              </select>
+            )}
+            <div className="col-span-1 md:col-span-3 flex flex-col md:flex-row gap-3">
               <button
                 type="button"
                 onClick={() => setSummaryOpen(true)}
@@ -276,36 +289,6 @@ const Reports = () => {
               >
                 عرض ملخص النطاق
               </button>
-              <button
-                type="button"
-                onClick={() => exportReports('current')}
-                className="flex-1 rounded-xl bg-emerald-500 text-slate-950 font-semibold px-3 py-2 text-sm hover:bg-emerald-400 transition"
-              >
-                تصدير النتائج الحالية (CSV)
-              </button>
-              <div className="grid grid-cols-3 gap-2 flex-1">
-                <button
-                  type="button"
-                  onClick={() => exportReports('daily')}
-                  className="rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-xs text-slate-200 hover:border-emerald-400 hover:text-emerald-100 transition"
-                >
-                  تصدير يومي
-                </button>
-                <button
-                  type="button"
-                  onClick={() => exportReports('weekly')}
-                  className="rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-xs text-slate-200 hover:border-emerald-400 hover:text-emerald-100 transition"
-                >
-                  تصدير أسبوعي
-                </button>
-                <button
-                  type="button"
-                  onClick={() => exportReports('monthly')}
-                  className="rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-xs text-slate-200 hover:border-emerald-400 hover:text-emerald-100 transition"
-                >
-                  تصدير شهري
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -383,47 +366,94 @@ const Reports = () => {
         )}
       </section>
 
-      <Modal open={summaryOpen} onClose={() => setSummaryOpen(false)} title={`ملخص ${viewMode === 'daily' ? 'يومي' : viewMode === 'weekly' ? 'أسبوعي' : 'شهري'}`}>
-        <div className="space-y-4">
-          <div className="rounded-2xl bg-[#1a142a] border border-purple-600/40 p-4 text-center space-y-2">
-            <h4 className="text-lg font-bold text-purple-200">إحصائيات الملخص</h4>
-            <div className="grid grid-cols-3 gap-3 text-sm font-semibold text-purple-100">
+      <Modal
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        title={''}
+      >
+        <div
+          className="space-y-4 mx-auto"
+          ref={summaryRef}
+          style={{ maxWidth: 520, backgroundColor: '#0b1020', padding: '16px', borderRadius: '18px' }}
+        >
+          <div className="flex justify-center">
+            <img src={logo} alt="الشعار" className="h-12 w-auto object-contain" />
+          </div>
+          <div
+            className="rounded-2xl p-4 text-center space-y-2"
+            style={{ backgroundColor: '#1a142a', border: '1px solid rgba(124,58,237,0.4)' }}
+          >
+            <h4 className="text-lg font-bold" style={{ color: '#c4b5fd' }}>
+              {viewMode === 'daily' ? 'ملخص يومي' : viewMode === 'weekly' ? 'ملخص أسبوعي' : 'ملخص شهري'}
+            </h4>
+            <p className="text-xs" style={{ color: '#a78bfa' }}>{todayStr}</p>
+            <div className="grid grid-cols-3 gap-3 text-sm font-semibold" style={{ color: '#e9d5ff' }}>
               <div className="space-y-1">
-                <p className="text-xs text-purple-300">عدد الصفقات</p>
-                <p className="text-xl text-white">{summaryStats.total}</p>
+                <p className="text-xs" style={{ color: '#a78bfa' }}>عدد الصفقات</p>
+                <p className="text-xl" style={{ color: '#ffffff' }}>{summaryStats.total}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-xs text-purple-300">الصافي ($)</p>
-                <p className="text-xl text-emerald-300">${summaryStats.net.toFixed(2)}</p>
+                <p className="text-xs" style={{ color: '#a78bfa' }}>الصافي</p>
+                <p className="text-xl" style={{ color: '#34d399' }}>${summaryStats.net.toFixed(2)}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-xs text-purple-300">نسبة الفوز</p>
-                <p className="text-xl text-white">{summaryStats.winRate}%</p>
+                <p className="text-xs" style={{ color: '#a78bfa' }}>نسبة الفوز</p>
+                <p className="text-xl" style={{ color: '#ffffff' }}>{summaryStats.winRate}%</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-purple-700/30 bg-[#120f1d] overflow-hidden">
-            <div className="grid grid-cols-5 text-xs uppercase tracking-wide text-purple-300 px-4 py-2 border-b border-purple-800/50">
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{ backgroundColor: '#120f1d', border: '1px solid rgba(109,40,217,0.7)' }}
+          >
+            <div
+              className="grid grid-cols-5 px-5 py-3"
+              style={{
+                backgroundColor: '#171428',
+                color: '#ffffff',
+                borderBottom: '1px solid #7c3aed',
+                fontWeight: 800,
+                letterSpacing: '0px',
+                fontSize: '16px',
+                direction: 'rtl',
+                textTransform: 'none',
+                textShadow: '0 0 4px rgba(124,58,237,0.4)'
+              }}
+            >
               <span className="text-right">الشركة</span>
               <span className="text-right">النوع</span>
               <span className="text-right">دخول</span>
-              <span className="text-right">خروج</span>
+              <span className="text-right">اعلى</span>
               <span className="text-right">الربح ($)</span>
             </div>
-            <div className="divide-y divide-purple-900/40">
-              {filteredTradeReports.map((t) => {
-                const profit = (t.currentPrice - t.entryPrice) * t.contracts
+            <div>
+              {pagedReports.map((t) => {
+                const profit = (t.currentPrice - t.entryPrice) * t.contracts * 100
                 const isProfit = profit >= 0
                 return (
-                  <div key={t.id} className="grid grid-cols-5 text-sm text-slate-100 px-4 py-3">
+                  <div
+                    key={t.id}
+                    className="grid grid-cols-5 text-sm px-5 py-3"
+                    style={{
+                      color: '#e7e9f5',
+                      borderTop: '1px solid rgba(91,33,182,0.18)',
+                      backgroundColor: '#0f1324'
+                    }}
+                  >
                     <span className="text-right">{t.symbol}</span>
-                    <span className={`text-right font-semibold ${t.type === 'CALL' ? 'text-emerald-300' : 'text-red-300'}`}>
+                    <span
+                      className="text-right font-semibold"
+                      style={{ color: t.type === 'CALL' ? '#34d399' : '#f87171' }}
+                    >
                       {t.type}
                     </span>
                     <span className="text-right">{t.entryPrice.toFixed(2)}</span>
                     <span className="text-right">{t.currentPrice.toFixed(2)}</span>
-                    <span className={`text-right font-semibold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span
+                      className="text-right font-semibold"
+                      style={{ color: isProfit ? '#34d399' : '#f87171' }}
+                    >
                       {profit.toFixed(2)}$
                     </span>
                   </div>
@@ -431,6 +461,51 @@ const Reports = () => {
               })}
             </div>
           </div>
+
+        </div>
+
+        {pageCount > 1 && (
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+            {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPage(p)}
+                className="min-w-8 px-3 py-1 rounded-lg text-sm font-semibold transition"
+                style={
+                  page === p
+                    ? { backgroundColor: '#6d28d9', color: '#ffffff', border: '1px solid #7c3aed' }
+                    : { backgroundColor: '#0b1220', color: '#e2e8f0', border: '1px solid #1f2937' }
+                }
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={async () => {
+              if (!summaryRef.current) return
+              const html2canvas = await loadHtml2Canvas()
+              const canvas = await html2canvas(summaryRef.current, {
+                scale: 3,
+                backgroundColor: '#0b1020',
+                useCORS: true,
+                scrollY: -window.scrollY
+              })
+              const link = document.createElement('a')
+              link.download = `summary-${page}.png`
+              link.href = canvas.toDataURL('image/png')
+              link.click()
+            }}
+            className="rounded-xl px-4 py-2 text-sm font-semibold transition"
+            style={{ backgroundColor: '#059669', color: '#ffffff' }}
+          >
+            تحميل الصفحة كصورة
+          </button>
         </div>
       </Modal>
     </div>

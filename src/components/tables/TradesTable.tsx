@@ -49,8 +49,8 @@ const TradesTable: FC<Props> = ({ trades }) => {
                   <p className="font-semibold">${trade.entryPrice.toFixed(2)}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">السعر الحالي</p>
-                  <p className="font-semibold">${trade.currentPrice.toFixed(2)}</p>
+                  <p className="text-xs text-slate-500">أعلى</p>
+                  <p className="font-semibold">${(trade.strike / 100).toFixed(2)}</p>
                 </div>
               </div>
               <div className="flex items-center justify-between pt-1">
@@ -80,7 +80,7 @@ const TradesTable: FC<Props> = ({ trades }) => {
               <th className="px-4 py-3 font-medium">سترايك</th>
               <th className="px-4 py-3 font-medium">تاريخ الانتهاء</th>
               <th className="px-4 py-3 font-medium">سعر الدخول</th>
-              <th className="px-4 py-3 font-medium">السعر الحالي</th>
+              <th className="px-4 py-3 font-medium">أعلى</th>
               <th className="px-4 py-3 font-medium">الربح/الخسارة</th>
               <th className="px-4 py-3 font-medium">الحالة</th>
             </tr>
@@ -106,7 +106,7 @@ const TradesTable: FC<Props> = ({ trades }) => {
                   <td className="px-4 py-3 text-slate-200">${trade.strike.toFixed(2)}</td>
                   <td className="px-4 py-3 text-slate-200">{trade.expiry}</td>
                   <td className="px-4 py-3 text-slate-200">${trade.entryPrice.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-slate-200">${trade.currentPrice.toFixed(2)}</td>
+                  <td className="px-4 py-3 text-slate-200">${(trade.strike / 100).toFixed(2)}</td>
                   <td className="px-4 py-3">
                     <div className={`font-semibold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
                       <span className="block">

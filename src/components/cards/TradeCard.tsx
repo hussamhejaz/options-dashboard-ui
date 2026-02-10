@@ -4,7 +4,8 @@ import Badge from '../ui/Badge'
 
 const TradeCard: FC<{ trade: Trade }> = ({ trade }) => {
   const isProfit = trade.pl >= 0
-  const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts
+  const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts * 100
+  const isProfitValue = profitValue >= 0
   return (
     <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 hover:border-emerald-500/40 transition shadow-lg space-y-3">
       <div className="flex items-center justify-between">
@@ -27,7 +28,7 @@ const TradeCard: FC<{ trade: Trade }> = ({ trade }) => {
       </div>
       <div className="flex items-center justify-between text-sm text-slate-400">
         <span>السعر الحالي</span>
-        <span className="text-white">${trade.currentPrice.toFixed(2)}</span>
+        <span className="text-white">${(trade.strike / 100).toFixed(2)}</span>
       </div>
       <div className="flex items-center justify-between text-sm">
         <span className="text-slate-400">الربح / الخسارة</span>
@@ -35,8 +36,8 @@ const TradeCard: FC<{ trade: Trade }> = ({ trade }) => {
           <span className={`${isProfit ? 'text-emerald-400' : 'text-red-400'} font-semibold block`}>
             {isProfit ? '+' : ''}{trade.pl.toFixed(2)}%
           </span>
-          <span className="text-[11px] text-slate-400 block">
-            {isProfit ? '+' : ''}${profitValue.toFixed(2)}
+          <span className={`text-[11px] block ${isProfitValue ? 'text-emerald-400' : 'text-red-400'}`}>
+            {isProfitValue ? '+' : ''}${Math.abs(profitValue).toFixed(2)}
           </span>
         </div>
       </div>

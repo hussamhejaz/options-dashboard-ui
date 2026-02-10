@@ -11,7 +11,7 @@ const Reports = () => {
   const [summaryOpen, setSummaryOpen] = useState(false)
   const [monthFilter, setMonthFilter] = useState<'all' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'>('all')
   const [page, setPage] = useState(1)
-  const pageSize = 5
+  const pageSize = 10
   const summaryRef = useRef<HTMLDivElement | null>(null)
 
   const today = new Date()

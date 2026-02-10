@@ -142,6 +142,8 @@ const Trades = () => {
           <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((trade) => {
               const isProfit = trade.pl >= 0
+              const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts * 100
+              const isProfitValue = profitValue >= 0
               return (
                 <div
                   key={trade.id}
@@ -167,8 +169,8 @@ const Trades = () => {
                   {isProfit ? '+' : ''}
                   {trade.pl.toFixed(2)}%
                 </span>
-                <span className="text-emerald-400 text-right">
-                  ${((trade.currentPrice - trade.entryPrice) * trade.contracts * 100).toFixed(2)}
+                <span className={`${isProfitValue ? 'text-emerald-400' : 'text-red-400'} text-right`}>
+                  {isProfitValue ? '+' : '-'}${Math.abs(profitValue).toFixed(2)}
                 </span>
                 <span className="text-slate-200 text-right">
                   {(trade.strike / 100).toFixed(2)}
@@ -196,13 +198,7 @@ const Trades = () => {
                       <span className="h-2.5 w-2.5 rounded-sm border-2 border-emerald-300 bg-emerald-500/40" />
                       إغلاق الصفقة
                     </button>
-                    <button
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-slate-200 font-semibold hover:border-slate-500 hover:bg-slate-800 transition"
-                      type="button"
-                      onClick={() => deleteTradeById(trade.id)}
-                    >
-                      🗑 حذف الصفقة
-                    </button>
+                    {/* زر حذف الصفقة تمت إزالته بناءً على طلب المستخدم */}
                   </div>
                 </div>
               )

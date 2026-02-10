@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import StatCard from '../components/cards/StatCard'
 import TradeCard from '../components/cards/TradeCard'
 import TradesTable from '../components/tables/TradesTable'
@@ -5,6 +6,8 @@ import { mockStats } from '../data/mockStats'
 import { mockTrades } from '../data/mockTrades'
 
 const Dashboard = () => {
+  const [stats, setStats] = useState(mockStats)
+
   const sparkData = [120, 160, 140, 190, 210, 240, 230, 280, 260, 310]
   const maxValue = Math.max(...sparkData)
 
@@ -19,8 +22,19 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-8" dir="rtl">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-white">لوحة التحكم</h2>
+        <button
+          type="button"
+          onClick={() => setStats(mockStats.map((s) => ({ ...s, value: '0', delta: '0' })))}
+          className="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-slate-200 hover:border-emerald-400 hover:text-emerald-100 transition"
+        >
+          تصفير المؤشرات
+        </button>
+      </div>
+
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {mockStats.map((stat) => (
+        {stats.map((stat) => (
           <StatCard key={stat.id} label={stat.label} value={stat.value} delta={stat.delta} />
         ))}
       </section>

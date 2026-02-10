@@ -152,15 +152,15 @@ const Trades = () => {
                     <span className="text-xs text-slate-400">{trade.expiry}</span>
                   </div>
 
-                  <div className="rounded-xl bg-slate-900/80 border border-slate-800 px-3 py-2">
-                    <div className="grid grid-cols-5 text-xs text-slate-400 font-semibold mb-2">
+                  <div className="rounded-xl bg-slate-900/80 border border-slate-800 px-6 py-4">
+                    <div className="grid grid-cols-5 gap-6 md:gap-10 text-xs text-slate-400 font-semibold mb-3">
                       <span className="text-right">دخول</span>
                       <span className="text-right">حالي</span>
                       <span className="text-right">النسبة</span>
                       <span className="text-right">المبلغ</span>
                       <span className="text-right">أعلى</span>
                     </div>
-              <div className="grid grid-cols-5 text-sm font-semibold">
+              <div className="grid grid-cols-5 gap-6 md:gap-10 text-sm font-semibold">
                 <span className="text-slate-200 text-right">{trade.entryPrice.toFixed(2)}</span>
                 <span className="text-emerald-400 text-right">{trade.currentPrice.toFixed(2)}</span>
                 <span className={`${isProfit ? 'text-emerald-400' : 'text-red-400'} text-right`}>
@@ -168,7 +168,7 @@ const Trades = () => {
                   {trade.pl.toFixed(2)}%
                 </span>
                 <span className={`${isProfitValue ? 'text-emerald-400' : 'text-red-400'} text-right`}>
-                  {isProfitValue ? '+' : '-'}${Math.abs(profitValue).toFixed(2)}
+                  {isProfitValue ? '+' : '-'}${Math.abs(profitValue).toFixed(1)}
                 </span>
                 <span className="text-slate-200 text-right">
                   {(trade.strike / 100).toFixed(2)}

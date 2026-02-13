@@ -313,8 +313,10 @@ const Trades = () => {
             {filtered.map((trade) => {
               const entryPrice = Number.isFinite(trade.entryPrice) ? trade.entryPrice : 0
               const currentPrice = Number.isFinite(trade.currentPrice) ? trade.currentPrice : entryPrice
-              const highPrice = Number.isFinite(trade.highPrice) && trade.highPrice > 0 ? trade.highPrice : null
-              const midPrice = Number.isFinite(trade.lastMidPrice) && trade.lastMidPrice > 0 ? trade.lastMidPrice : null
+              const rawHigh = trade.highPrice ?? Number.NaN
+              const highPrice = Number.isFinite(rawHigh) && rawHigh > 0 ? rawHigh : null
+              const rawMid = trade.lastMidPrice ?? Number.NaN
+              const midPrice = Number.isFinite(rawMid) && rawMid > 0 ? rawMid : null
               const plValue = Number.isFinite(trade.pl) ? trade.pl : 0
               const isProfit = plValue >= 0
               const profitValue =
@@ -332,10 +334,10 @@ const Trades = () => {
                     <span className="text-xs text-slate-400">{trade.expiry}</span>
                   </div>
 
-                  {midPrice && (
+                  {midPrice !== null && (
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
                       <span>آخر منتصف: <span className="font-mono tabular-nums text-slate-200">{midPrice.toFixed(2)}</span></span>
-                      <span>أعلى: <span className="font-mono tabular-nums text-amber-300">{highPrice.toFixed(2)}</span></span>
+                      <span>أعلى: <span className="font-mono tabular-nums text-amber-300">{highPrice !== null ? highPrice.toFixed(2) : '--'}</span></span>
                     </div>
                   )}
 

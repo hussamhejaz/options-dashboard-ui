@@ -1,6 +1,7 @@
 import type { FC } from 'react'
 import { NavLink } from 'react-router-dom'
 import logo from '../../assets/images/logo.jpeg'
+import { clearAuthenticated } from '../auth/RequireAuth'
 
 type Props = {
   mobileOpen: boolean
@@ -14,7 +15,7 @@ const items = [
   { id: 'trades', label: 'الصفقات', to: '/trades' },
   { id: 'reports', label: 'التقارير', to: '/reports' },
   { id: 'ads', label: 'الإعلانات', to: '/ads' },
-  { id: 'settings', label: 'الإعدادات', to: '/settings' }
+  // settings removed
 ]
 
 const Sidebar: FC<Props> = ({ mobileOpen, desktopOpen, onCloseMobile, onToggleDesktop }) => {
@@ -91,6 +92,16 @@ const Sidebar: FC<Props> = ({ mobileOpen, desktopOpen, onCloseMobile, onToggleDe
         <div className="px-6 py-5 border-t border-slate-800 text-sm text-slate-400">
           <p>إصدار تجريبي</p>
           <p className="text-xs mt-1">آخر تحديث: 08 فبراير 2026</p>
+          <button
+            type="button"
+            onClick={() => {
+              clearAuthenticated()
+              window.location.href = '/login'
+            }}
+            className="mt-3 w-full rounded-xl border border-red-400/40 bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-100 hover:bg-red-500/25 hover:border-red-300 transition"
+          >
+            خروج
+          </button>
         </div>
       </aside>
 

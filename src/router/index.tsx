@@ -4,22 +4,27 @@ import Dashboard from '../pages/Dashboard'
 import Trades from '../pages/Trades'
 import Reports from '../pages/Reports'
 import Ads from '../pages/Ads'
-import Settings from '../pages/Settings'
+// Settings removed
 import NotFound from '../pages/NotFound'
 import Login from '../pages/Login'
+import RequireAuth from '../components/auth/RequireAuth'
 
 const Router = () =>
   useRoutes([
     { path: '/login', element: <Login /> },
     {
       path: '/',
-      element: <DashboardLayout />,
+      element: (
+        <RequireAuth>
+          <DashboardLayout />
+        </RequireAuth>
+      ),
       children: [
         { index: true, element: <Dashboard /> },
         { path: 'trades', element: <Trades /> },
         { path: 'reports', element: <Reports /> },
         { path: 'ads', element: <Ads /> },
-        { path: 'settings', element: <Settings /> },
+        // settings route removed
         { path: '*', element: <NotFound /> }
       ]
     }

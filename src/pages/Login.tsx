@@ -1,21 +1,32 @@
-import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { setAuthenticated, isAuthenticated } from '../components/auth/RequireAuth'
 import logo from '../assets/images/logo.jpeg'
 
 const Login = () => {
   const navigate = useNavigate()
-  const [email, setEmail] = useState('')
+  const location = useLocation()
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isAuthenticated()) {
+      navigate('/')
+    }
+  }, [navigate])
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    // لاحقاً سنضيف التحقق الفعلي
-    setTimeout(() => {
-      setLoading(false)
-      navigate('/')
-    }, 400)
+    const redirectTo = (location.state as any)?.from || '/'
+    if (password === 'Rukn2030') {
+      setAuthenticated()
+      navigate(redirectTo, { replace: true })
+    } else {
+      setError('كلمة المرور غير صحيحة')
+    }
+    setLoading(false)
   }
 
   return (
@@ -30,21 +41,10 @@ const Login = () => {
               دخول
             </div>
             <h1 className="text-2xl font-bold text-white">تسجيل الدخول</h1>
-            <p className="text-sm text-slate-400">أدخل بريدك الإلكتروني وكلمة المرور للمتابعة إلى لوحة التحكم.</p>
+            <p className="text-sm text-slate-400">الوصول محمي بكلمة مرور. استخدم كلمة المرور الصحيحة للمتابعة.</p>
           </div>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="space-y-2">
-              <label className="text-sm text-slate-300">البريد الإلكتروني</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl bg-[#0f0b1d]/80 border border-purple-700/40 px-4 py-3 text-sm text-slate-100 focus:outline-none focus:border-purple-400"
-                placeholder="you@example.com"
-              />
-            </div>
             <div className="space-y-2">
               <label className="text-sm text-slate-300">كلمة المرور</label>
               <input
@@ -65,9 +65,7 @@ const Login = () => {
             </button>
           </form>
 
-          <div className="text-center text-xs text-slate-500">
-            سيتم إضافة التحقق لاحقًا، حالياً يتم تحويلك مباشرةً للوحة التحكم عند الضغط على دخول.
-          </div>
+          {error && <p className="text-center text-sm text-red-400">{error}</p>}
         </div>
       </div>
     </div>

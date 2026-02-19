@@ -1,180 +1,222 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Button from '../components/ui/Button'
-import Badge from '../components/ui/Badge'
-import { mockTrades } from '../data/mockTrades'
+import { apiClient } from '../lib/apiClient'
+import type { Trade } from '../types/trade'
+
+type ActionStatus = 'idle' | 'success' | 'error'
+
+type WinnerApi = {
+  id?: string
+  symbol?: string
+  right?: 'call' | 'put'
+  strike?: number | string
+  expiration?: string
+  entryPrice?: number | string | null
+  closePrice?: number | string | null
+  pnl?: number | string | null
+  pnlPercent?: number | string | null
+  contracts?: number | string | null
+}
+
+const toNumber = (value: unknown, fallback = 0): number => {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+const isValidTicker = (symbol: string): boolean => /^[A-Z0-9]{1,10}(?:[.-][A-Z0-9]{1,4})?$/.test(symbol.trim().toUpperCase())
+
+const normalizeWinner = (item: WinnerApi, index: number): Trade => {
+  const typeRaw = String(item.right ?? 'call').toUpperCase()
+  const type = typeRaw === 'PUT' ? 'PUT' : 'CALL'
+  const entryPrice = toNumber(item.entryPrice, 0)
+  const currentPrice = toNumber(item.closePrice, entryPrice)
+  const closePrice = item.closePrice !== undefined ? toNumber(item.closePrice, currentPrice) : undefined
+  const pl = toNumber(item.pnlPercent, 0)
+
+  return {
+    id: String(item.id ?? `${item.symbol ?? 'winner'}-${index + 1}`),
+    symbol: String(item.symbol ?? '--'),
+    type,
+    strike: toNumber(item.strike, 0),
+    expiry: String(item.expiration ?? '--'),
+    entryPrice,
+    currentPrice,
+    closePrice,
+    pnlAmount: item.pnl !== undefined ? toNumber(item.pnl, 0) : undefined,
+    pl,
+    status: 'closed',
+    contracts: Math.max(1, Math.trunc(toNumber(item.contracts, 1)))
+  }
+}
 
 const Ads = () => {
-  const [botToken, setBotToken] = useState('')
-  const [chatId, setChatId] = useState('')
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const cardRef = useRef<HTMLDivElement | null>(null)
+  const [winningTrades, setWinningTrades] = useState<Trade[]>([])
+  const [loading, setLoading] = useState(false)
+  const [creatingId, setCreatingId] = useState<string | null>(null)
+  const [status, setStatus] = useState<ActionStatus>('idle')
+  const [error, setError] = useState<string | null>(null)
 
-  const winningToday = useMemo(() => {
-    // افتراض: نأخذ أعلى صفقة رابحة كـ "التقرير اليومي"
-    const wins = mockTrades.filter((t) => t.pl > 0)
-    if (wins.length === 0) return null
-    return wins.reduce((max, t) => (t.pl > max.pl ? t : max), wins[0])
+  const loadWinningTrades = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const payload = await apiClient.get<WinnerApi[]>('/trades/winners', { timeoutMs: 12000 })
+      const winners = Array.isArray(payload) ? payload.map((item, index) => normalizeWinner(item, index)) : []
+      setWinningTrades(winners)
+    } catch (err) {
+      console.error(err)
+      setWinningTrades([])
+      setError('تعذر تحميل الصفقات الرابحة')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const message = winningToday
-    ? `تقرير الصفقة الرابحة اليوم:\n` +
-      `الرمز: ${winningToday.symbol}\n` +
-      `النوع: ${winningToday.type}\n` +
-      `سعر الدخول: $${winningToday.entryPrice.toFixed(2)}\n` +
-      `السعر الحالي: $${winningToday.currentPrice.toFixed(2)}\n` +
-      `نسبة الربح: ${winningToday.pl.toFixed(2)}%\n` +
-      `عقود: ${winningToday.contracts}`
-    : 'لا توجد صفقات رابحة لإرسالها اليوم.'
+  useEffect(() => {
+    loadWinningTrades()
+    const intervalId = window.setInterval(() => {
+      loadWinningTrades()
+    }, 5000)
+    return () => window.clearInterval(intervalId)
+  }, [loadWinningTrades])
 
-  const handleSend = () => {
-    // ملاحظة: لا يوجد باك-إند هنا. هذا الزر فقط يوضح الرسالة الجاهزة للإرسال.
-    // للإرسال الفعلي إلى تيليجرام، استخدم طلب POST إلى:
-    // https://api.telegram.org/bot<token>/sendMessage مع المعاملات chat_id و text
-    if (!winningToday) return
-    if (!botToken || !chatId) {
+  const handleCreateFromTrade = async (trade: Trade) => {
+    if (!isValidTicker(String(trade.symbol ?? ''))) {
       setStatus('error')
+      setError('اكتب رمز سهم صالح (مثال: AAPL، TSLA، BRK.B)')
       return
     }
-    setStatus('success')
-    // يمكن دمج طلب fetch هنا عند توصيل الباك-إند.
-  }
 
-  const exportCardAsImage = async () => {
-    // الميزة تحتاج الحزمة html-to-image، غير متوفرة حالياً بدون اتصال
-    alert('لتصدير الصورة ثبّت الحزمة html-to-image: npm install html-to-image ثم أعد المحاولة.')
-    setStatus('error')
+    setCreatingId(trade.id)
+    setStatus('idle')
+    setError(null)
+    try {
+      await apiClient.post(
+        '/ads/send-from-trade',
+        {
+          tradeId: trade.id,
+          title: `${trade.symbol} ${trade.type} | ${trade.expiry}`
+        },
+        { timeoutMs: 120000 }
+      )
+      setStatus('success')
+    } catch (err) {
+      console.error(err)
+      setStatus('error')
+      setError(err instanceof Error ? err.message : 'تعذر إنشاء الإعلان من الصفقة')
+    } finally {
+      setCreatingId(null)
+    }
   }
 
   return (
     <div className="space-y-6" dir="rtl">
-      <div>
-        <h2 className="text-2xl font-bold text-white">إرسال التقرير اليومي لتيليجرام</h2>
-        <p className="text-slate-400 text-sm mt-1">
-          توليد رسالة الصفقة الرابحة اليوميًا وإرسالها إلى قناة تيليجرام.
-        </p>
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">إعلانات تيليجرام</h2>
+          <p className="text-slate-400 text-sm mt-1">
+            هنا يتم عرض الصفقات الرابحة فقط. اختر أي صفقة لإنشاء إعلان مباشر من الباك-إند.
+          </p>
+        </div>
+        <Button variant="secondary" onClick={loadWinningTrades} disabled={loading}>
+          {loading ? '...جاري التحديث' : 'تحديث الصفقات الرابحة'}
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-        <label className="space-y-2">
-          <span className="text-sm text-slate-300">Bot Token</span>
-          <input
-            value={botToken}
-            onChange={(e) => setBotToken(e.target.value)}
-            placeholder="123456:ABC-DEF..."
-            className="w-full rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400"
-          />
-        </label>
-        <label className="space-y-2">
-          <span className="text-sm text-slate-300">Chat ID / Channel ID</span>
-          <input
-            value={chatId}
-            onChange={(e) => setChatId(e.target.value)}
-            placeholder="@channel_username أو رقم chat_id"
-            className="w-full rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400"
-          />
-        </label>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        {status === 'success' && <span className="text-emerald-300">تم إنشاء الإعلان وإرساله إلى تيليجرام</span>}
+        {status === 'error' && <span className="text-red-300">فشل إنشاء/إرسال الإعلان</span>}
+        {error && <span className="text-red-400">{error}</span>}
       </div>
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-400">الرسالة الجاهزة للإرسال</p>
-            <h3 className="text-lg font-semibold text-white">الصفقة الرابحة اليوم</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {loading && (
+          <div className="col-span-full text-sm text-slate-300 border border-slate-700 rounded-xl p-4 text-center">
+            جاري تحميل الصفقات الرابحة...
           </div>
-          <Badge variant={winningToday ? 'emerald' : 'gray'}>
-            {winningToday ? 'جاهز' : 'لا توجد صفقات رابحة'}
-          </Badge>
-        </div>
-        <pre className="whitespace-pre-wrap text-sm text-slate-100 bg-slate-900/70 border border-slate-800 rounded-xl p-3">
-{message}
-        </pre>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            onClick={() => navigator.clipboard?.writeText(message)}
-            variant="secondary"
-            disabled={!winningToday}
-          >
-            نسخ الرسالة
-          </Button>
-          <Button onClick={handleSend} disabled={!winningToday}>
-            إرسال إلى تيليجرام (يدوي)
-          </Button>
-          {status === 'error' && <span className="text-sm text-red-300">أدخل التوكن و الـ Chat ID أولاً</span>}
-          {status === 'success' && <span className="text-sm text-emerald-300">تم تجهيز الطلب (أضف استدعاء الـ API فعليًا)</span>}
-        </div>
-        <p className="text-xs text-slate-500">
-          لدمج الإرسال الفعلي: استدعِ <code>POST https://api.telegram.org/bot&lt;token&gt;/sendMessage</code> مع
-          <code>chat_id</code> و <code>text</code>. يمكن وضعه في خدمة backend صغيرة أو وظيفة serverless.
-        </p>
-      </div>
+        )}
 
-      {/* معاينة البطاقة بشكل مشابه للصورة المطلوبة */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">معاينة البطاقة (إرسال صورة)</h3>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={exportCardAsImage} disabled={!winningToday}>
-              تصدير كصورة PNG
-            </Button>
-          </div>
-        </div>
-        <div
-          ref={cardRef}
-          className="relative w-full max-w-3xl rounded-2xl overflow-hidden bg-[#0f0d15] border border-purple-700/60 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.8)]"
-        >
-          <div className="flex items-center justify-between px-5 py-3 border-b border-purple-700/60 bg-[#161124]">
-            <div className="space-y-1">
-              <div className="text-xl font-bold text-white">
-                {winningToday ? `${winningToday.symbol} (${winningToday.strike})` : 'لا توجد صفقة'}
-              </div>
-              <div className="text-sm text-gray-300">
-                {winningToday ? `${winningToday.expiry} ${winningToday.type.toLowerCase()}` : ''}
-              </div>
-            </div>
-            <div className="text-purple-300 font-semibold flex items-center gap-2">
-              <span className="w-2 h-5 bg-red-500 block" />
-              <span className="w-2 h-6 bg-green-500 block" />
-            </div>
-          </div>
+        {winningTrades.map((trade) => {
+          const tickerIsValid = isValidTicker(String(trade.symbol ?? ''))
+          const isProfit = Number(trade.pl ?? 0) >= 0
+          const currentPrice = Number.isFinite(trade.currentPrice) ? trade.currentPrice : trade.entryPrice
+          const closePrice = Number.isFinite(trade.closePrice ?? Number.NaN) ? Number(trade.closePrice) : currentPrice
+          const pnlAmount =
+            Number.isFinite(trade.pnlAmount)
+              ? Number(trade.pnlAmount)
+              : (closePrice - trade.entryPrice) * (trade.contracts ?? 1) * 100
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-6 py-6 items-center">
-            <div className="md:col-span-2 flex items-center gap-6">
-              <div className="text-6xl font-extrabold text-emerald-500 leading-none">
-                {winningToday ? winningToday.currentPrice.toFixed(2) : '--'}
+          return (
+            <article
+              key={trade.id}
+              
+              className="rounded-2xl border border-slate-800 bg-[#0f1421] p-5 space-y-4 shadow-[0_15px_40px_-25px_rgba(0,0,0,0.7)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-right">
+                  <div className="text-xl font-bold text-white">
+                    {trade.symbol} ({trade.type})
+                  </div>
+                  <div className="text-sm text-slate-300">{trade.expiry}</div>
+                </div>
+                <div className="rounded-full bg-emerald-500/10 border border-emerald-500/40 px-3 py-1 text-xs text-emerald-300">
+                  رابحة
+                </div>
               </div>
-              <div className="space-y-1 text-sm text-emerald-300">
-                <div>{winningToday ? (winningToday.currentPrice - winningToday.entryPrice).toFixed(2) + ' $' : '--'}</div>
-                <div>{winningToday ? `${winningToday.pl.toFixed(1)}%` : '--'}</div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 text-white text-lg">
-              <div className="flex justify-between">
-                <span className="text-gray-300">Mid :</span>
-                <span>{winningToday ? (winningToday.currentPrice - 0.6).toFixed(2) : '--'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Open Int :</span>
-                <span>{winningToday ? 350 : '--'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-300">Vol :</span>
-                <span>{winningToday ? 300 : '--'}</span>
-              </div>
-            </div>
-          </div>
 
-          <div className="px-6 pb-6 flex items-center gap-3">
-            <span className="text-sm text-gray-400">🇺🇸</span>
-            <span className="text-sm text-gray-400">🇸🇦</span>
+              <div className="grid grid-cols-2 gap-3 text-sm text-slate-200">
+                <div className="text-right space-y-1">
+                  <div className="text-xs text-slate-400">سعر الدخول</div>
+                  <div className="font-semibold">${Number(trade.entryPrice ?? 0).toFixed(2)}</div>
+                  <div className="text-xs text-slate-400 pt-1">سعر الإغلاق</div>
+                  <div className="font-semibold">${Number(closePrice ?? 0).toFixed(2)}</div>
+                </div>
+                <div className="text-right space-y-1">
+                  <div className="text-xs text-slate-400">سترايك</div>
+                  <div className="font-semibold">{trade.strike}</div>
+                  <div className="text-xs text-slate-400 pt-1">عدد العقود</div>
+                  <div className="font-semibold">{trade.contracts}</div>
+                </div>
+              </div>
+
+              <div className="text-right space-y-1">
+                <div className={`text-lg font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {isProfit ? '+' : ''}
+                  {Number(trade.pl ?? 0).toFixed(2)}%
+                </div>
+                <div className="text-sm text-slate-300">
+                  {pnlAmount >= 0 ? '+' : ''}
+                  ${Number(pnlAmount ?? 0).toFixed(2)}
+                </div>
+                {!tickerIsValid && (
+                  <div className="text-xs text-amber-300">
+                    رمز السهم غير صالح للإرسال إلى تيليجرام.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  className="flex-1 bg-emerald-600/90 hover:bg-emerald-500 text-white"
+                  onClick={() => handleCreateFromTrade(trade)}
+                  disabled={creatingId === trade.id || !tickerIsValid}
+                >
+                  {creatingId === trade.id ? '...جاري الإرسال' : 'إنشاء + إرسال إلى تيليجرام'}
+                </Button>
+              </div>
+            </article>
+          )
+        })}
+
+        {winningTrades.length === 0 && !loading && (
+          <div className="col-span-full text-sm text-slate-400 border border-dashed border-slate-700 rounded-xl p-4 text-center">
+            لا توجد صفقات رابحة حالياً. تأكد أن هناك صفقات بحالة CLOSED وقيمة pnl أكبر من 0.
           </div>
-        </div>
-        <p className="text-xs text-slate-500">
-          للتصدير كصورة PNG استخدم الزر أعلاه (تحتاج الحزمة <code>html-to-image</code>). لإرسال الصورة إلى تيليجرام استعمل
-          <code>sendPhoto</code> مع الملف الناتج.
-        </p>
+        )}
       </div>
     </div>
   )
 }
+
 
 export default Ads

@@ -22,6 +22,7 @@ export type CreateTradeInput = {
   stopLoss?: number | null
 }
 
+
 type ApiTrade = Partial<{
   id: string
   symbol: string
@@ -47,8 +48,9 @@ export const useCreateTrade = () => {
 
   const createTrade = useCallback(async (payload: CreateTradeInput): Promise<Trade> => {
     const symbol = payload.symbol.trim().toUpperCase()
-    if (!/^[A-Z]{1,5}$/.test(symbol)) {
-      const message = 'اكتب رمز السهم الصحيح (مثل AAPL وليس APPLE)'
+    const tickerLooksValid = /^[A-Z0-9]{1,10}(?:[.\-][A-Z0-9]{1,4})?$/.test(symbol)
+    if (!tickerLooksValid) {
+      const message = 'اكتب رمز سهم صالح (مثال: AAPL، TSLA، BRK.B)'
       setError(message)
       throw new Error(message)
     }
@@ -71,14 +73,19 @@ export const useCreateTrade = () => {
         right: payload.right,
         strike: payload.strike,
         expiration: payload.expiration,
+        
         contracts: payload.contracts,
         entryPrice: payload.entryPrice,
         stopLoss: payload.stopLoss
       }
-      const created = await apiClient.post<ApiTrade>('/trades', payloadForApi)
+      const created = await apiClient.post<ApiTrade>('/trades', payloadForApi, { timeoutMs: 120000 })
       return toTrade(created, payloadForApi)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'تعذر إرسال الصفقة'
+      const rawMessage = err instanceof Error ? err.message : 'تعذر إرسال الصفقة'
+      const message =
+        tickerLooksValid && rawMessage.includes('اكتب رمز سهم صالح')
+          ? 'الرمز صالح، لكن عقد الأوبشن غير متاح. تأكد من السترايك وتاريخ الانتهاء.'
+          : rawMessage
       setError(message)
       throw err
     } finally {

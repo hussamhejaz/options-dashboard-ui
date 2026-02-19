@@ -1,36 +1,149 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import StatCard from '../components/cards/StatCard'
 import TradeCard from '../components/cards/TradeCard'
 import TradesTable from '../components/tables/TradesTable'
-import { mockStats } from '../data/mockStats'
-import { mockTrades } from '../data/mockTrades'
+import { apiClient } from '../lib/apiClient'
+import type { Trade } from '../types/trade'
+
+type DashboardTrade = {
+  id: string
+  symbol: string
+  right: 'call' | 'put'
+  strike: number
+  expiration: string
+  status: 'OPEN' | 'CLOSED' | 'INVALID'
+  entryPrice?: number
+  currentPrice?: number
+  highPrice?: number
+  lastMidPrice?: number
+  contracts?: number
+  pnlAmount?: number
+  pnlPercent?: number
+  closePrice?: number
+}
+
+const mapDashToTrade = (t: DashboardTrade): Trade => {
+  const expiryRaw = String(t.expiration ?? '')
+  const expiryFormatted =
+    /^[0-9]{8}$/.test(expiryRaw) ? `${expiryRaw.slice(0, 4)}-${expiryRaw.slice(4, 6)}-${expiryRaw.slice(6, 8)}` : expiryRaw
+  const entryPrice = Number(t.entryPrice ?? 0)
+  const currentPrice = Number(t.currentPrice ?? entryPrice)
+  const rawHigh = t.highPrice ?? Number.NaN
+  return {
+    id: t.id,
+    symbol: t.symbol,
+    type: (t.right ?? 'call').toUpperCase() as Trade['type'],
+    strike: Number(t.strike ?? 0),
+    expiry: expiryFormatted,
+    entryPrice,
+    currentPrice,
+    highPrice: Number.isFinite(rawHigh) && rawHigh > 0 ? Number(rawHigh) : null,
+    closePrice: Number.isFinite(t.closePrice ?? NaN) ? Number(t.closePrice) : undefined,
+    pnlAmount: Number(t.pnlAmount ?? 0),
+    lastMidPrice: Number(t.lastMidPrice ?? 0),
+    pl: Number(t.pnlPercent ?? 0),
+    status: t.status === 'CLOSED' ? 'closed' : t.status === 'INVALID' ? 'invalid' : 'open',
+    contracts: Number(t.contracts ?? 1),
+    stopLoss: undefined
+  }
+}
 
 const Dashboard = () => {
-  const [stats, setStats] = useState(mockStats)
+  const [openTrades, setOpenTrades] = useState<Trade[]>([])
+  const [closedTrades, setClosedTrades] = useState<DashboardTrade[]>([])
+  const [summary, setSummary] = useState<{
+    netProfit: number
+    winRate: number
+    openCount: number
+    closedCount: number
+    winCount: number
+    lossCount: number
+    weeklyProfit: { label: string; value: number }[]
+  } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const sparkData = [120, 160, 140, 190, 210, 240, 230, 280, 260, 310]
-  const maxValue = Math.max(...sparkData)
+  const sparkData = useMemo(() => {
+    const fromSummary = summary?.weeklyProfit?.map((w) => Number(w.value) || 0) ?? []
+    if (fromSummary.length) return fromSummary
+    const closed = closedTrades.slice(0, 10)
+    if (closed.length === 0) return [0]
+    return closed.map((t) => Number(t.pnlAmount ?? 0) || 0)
+  }, [closedTrades, summary])
+  const hasSpark = sparkData.length > 0
+  const maxValue = Math.max(...sparkData, 1)
 
-  const donutStats = {
-    win: 2,
-    lose: 0,
-    open: 2
-  }
-  const donutTotal = donutStats.win + donutStats.lose + donutStats.open
+  const stats = useMemo(() => {
+    const totalPnL = summary?.netProfit ?? closedTrades.reduce((sum, t) => sum + Number(t.pnlAmount ?? 0), 0)
+    const closedCount = summary?.closedCount ?? closedTrades.length
+    const wins = summary?.winCount ?? closedTrades.filter((t) => Number(t.pnlAmount ?? 0) > 0).length
+    const openCount = summary?.openCount ?? openTrades.length
+    const winRate = summary?.winRate ?? (closedCount ? Math.round((wins / closedCount) * 100) : 0)
+    const losses = summary?.lossCount ?? closedTrades.filter((t) => Number(t.pnlAmount ?? 0) <= 0).length
+    return [
+      { id: 'wins', label: 'صفقات رابحة', value: `${wins}`, delta: '' },
+      { id: 'losses', label: 'صفقات خاسرة', value: `${losses}`, delta: '' },
+      { id: 'open', label: 'صفقات مفتوحة', value: `${openCount}`, delta: '' },
+      {
+        id: 'pnl',
+        label: 'صافي الربح',
+        value: `$${totalPnL.toFixed(2)}`,
+        delta: `${winRate}% معدل الفوز`
+      }
+    ]
+  }, [openTrades, closedTrades, summary])
+
+  const donutStats = useMemo(() => {
+    const win = summary?.winCount ?? closedTrades.filter((t) => Number(t.pnlAmount ?? 0) > 0).length
+    const lose = summary?.lossCount ?? closedTrades.filter((t) => Number(t.pnlAmount ?? 0) <= 0).length
+    const open = summary?.openCount ?? openTrades.length
+    return { win, lose, open }
+  }, [summary, closedTrades, openTrades])
+  const donutTotal = Math.max(donutStats.win + donutStats.lose + donutStats.open, 1)
   const donutRadius = 70
   const donutCirc = 2 * Math.PI * donutRadius
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [openRes, closedRes, summaryRes] = await Promise.all([
+        apiClient.get<DashboardTrade[]>('/trades/dashboard?status=OPEN'),
+        apiClient.get<DashboardTrade[]>('/trades?status=CLOSED'),
+        apiClient.get<{
+          netProfit: number
+          winRate: number
+          openCount: number
+          closedCount: number
+          winCount: number
+          lossCount: number
+          weeklyProfit: { label: string; value: number }[]
+        }>('/dashboard/summary')
+      ])
+      setOpenTrades(openRes.map(mapDashToTrade))
+      setClosedTrades(closedRes)
+      setSummary(summaryRes)
+    } catch (err) {
+      console.error(err)
+      setError('تعذر تحميل البيانات')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
 
   return (
     <div className="space-y-8" dir="rtl">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">لوحة التحكم</h2>
-        <button
-          type="button"
-          onClick={() => setStats(mockStats.map((s) => ({ ...s, value: '0', delta: '0' })))}
-          className="rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-slate-200 hover:border-emerald-400 hover:text-emerald-100 transition"
-        >
-          تصفير المؤشرات
-        </button>
+        <div className="flex items-center gap-3 text-xs">
+          {loading && <span className="text-slate-400">جاري التحديث...</span>}
+          {error && <span className="text-red-400">{error}</span>}
+        </div>
       </div>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -46,7 +159,9 @@ const Dashboard = () => {
               <p className="text-xs text-slate-400">الأداء الأسبوعي</p>
               <h3 className="text-lg font-semibold text-white">حركة الأرباح</h3>
             </div>
-            <span className="text-sm text-emerald-300 font-semibold">+18%</span>
+            <span className="text-sm text-emerald-300 font-semibold">
+              {hasSpark ? `${(((sparkData.at(-1) ?? 0) / Math.max(...sparkData, 1)) * 100).toFixed(1)}%` : '+0%'}
+            </span>
           </div>
           <svg viewBox="0 0 320 140" className="w-full">
             <defs>
@@ -58,9 +173,17 @@ const Dashboard = () => {
             <polyline
               fill="url(#sparkFill)"
               stroke="none"
-              points={sparkData
-                .map((v, i) => `${(i / (sparkData.length - 1)) * 320},${140 - (v / maxValue) * 120}`)
-                .join(' ')}
+              points={
+                hasSpark
+                  ? sparkData
+                      .map((v, i) => {
+                        const x = (i / Math.max(sparkData.length - 1, 1)) * 320
+                        const y = 140 - (v / maxValue) * 120
+                        return `${x.toFixed(1)},${y.toFixed(1)}`
+                      })
+                      .join(' ')
+                  : '0,140 320,140'
+              }
             />
             <polyline
               fill="none"
@@ -68,9 +191,17 @@ const Dashboard = () => {
               strokeWidth="3"
               strokeLinejoin="round"
               strokeLinecap="round"
-              points={sparkData
-                .map((v, i) => `${(i / (sparkData.length - 1)) * 320},${140 - (v / maxValue) * 120}`)
-                .join(' ')}
+              points={
+                hasSpark
+                  ? sparkData
+                      .map((v, i) => {
+                        const x = (i / Math.max(sparkData.length - 1, 1)) * 320
+                        const y = 140 - (v / maxValue) * 120
+                        return `${x.toFixed(1)},${y.toFixed(1)}`
+                      })
+                      .join(' ')
+                  : '0,140 320,140'
+              }
             />
           </svg>
           <div className="flex items-center justify-between text-xs text-slate-400">
@@ -146,14 +277,14 @@ const Dashboard = () => {
       </section>
 
       <section className="space-y-6">
-        <TradesTable trades={mockTrades} />
+        <TradesTable trades={openTrades} />
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold">آخر الصفقات</h3>
             <span className="text-xs text-slate-400">موجز سريع لآخر التحركات</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {mockTrades.slice(0, 4).map((trade) => (
+            {openTrades.slice(0, 4).map((trade) => (
               <TradeCard key={trade.id} trade={trade} />
             ))}
           </div>

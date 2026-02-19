@@ -1,63 +1,78 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import Badge from '../components/ui/Badge'
-import { mockTrades } from '../data/mockTrades'
 import Modal from '../components/ui/Modal'
 import logo from '../assets/images/logo.jpeg'
+import { apiClient } from '../lib/apiClient'
 
 const Reports = () => {
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const [selectedDate, setSelectedDate] = useState(todayIso)
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('daily')
   const [summaryOpen, setSummaryOpen] = useState(false)
-  const [monthFilter, setMonthFilter] = useState<'all' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | '11' | '12'>('all')
   const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [totalPnL, setTotalPnL] = useState(0)
   const pageSize = 10
   const summaryRef = useRef<HTMLDivElement | null>(null)
 
   const today = new Date()
   const todayStr = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`
 
-  const breakdown = [
-    { id: 'daily', title: 'يومي', change: '+1.8%', profit: '$3,240', trades: 12, color: 'emerald' },
-    { id: 'weekly', title: 'أسبوعي', change: '+4.2%', profit: '$12,480', trades: 48, color: 'blue' },
-    { id: 'monthly', title: 'شهري', change: '+12.6%', profit: '$51,300', trades: 188, color: 'purple' }
-  ]
+  type ReportItem = {
+    id: string
+    tradeId: string
+    symbol: string
+    right: string
+    strike: number
+    expiration: string
+    contracts: number
+    entryPrice: number
+    closePrice?: number
+    pnlAmount: number
+    pnlPercent: number
+    status: string
+    reason?: string
+    closedAt?: string
+    periodDaily?: string
+    periodWeekly?: string
+    periodMonthly?: string
+  }
 
-  // بناء بيانات التقارير لكل صفقة مع تواريخ افتراضية
-  const tradeReports = useMemo(() => {
-    const baseDate = new Date('2026-02-01')
-    return mockTrades.map((trade, idx) => {
-      const date = new Date(baseDate)
-      date.setDate(baseDate.getDate() + idx * 2)
-      const iso = date.toISOString().slice(0, 10)
-      const dayIdx = date.getDay() // 0 Sunday
-      const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
-      return {
-        ...trade,
-        reportDate: iso,
-        dayKey: dayMap[dayIdx],
-        dayLabel: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'][dayIdx]
-      }
-    })
-  }, [])
+  const [reports, setReports] = useState<ReportItem[]>([])
+  const [periodSummaries, setPeriodSummaries] = useState<
+    Array<{ id: 'daily' | 'weekly' | 'monthly'; title: string; totalPnL: number; count: number }>
+  >([
+    { id: 'daily', title: 'يومي', totalPnL: 0, count: 0 },
+    { id: 'weekly', title: 'أسبوعي', totalPnL: 0, count: 0 },
+    { id: 'monthly', title: 'شهري', totalPnL: 0, count: 0 }
+  ])
+  const deleteReport = async (id: string) => {
+    try {
+      await apiClient.delete(`/reports/${id}`)
+      setReports((prev) => prev.filter((r) => r.id !== id))
+    } catch (err) {
+      console.error('Failed to delete report', err)
+      setError('تعذّر حذف التقرير')
+    }
+  }
 
-  const [tradeReportsData, setTradeReportsData] = useState(tradeReports)
+  const formatExpiryForDisplay = (value?: string | number) => {
+    const raw = value != null ? String(value) : ''
+    const digits = raw.replace(/-/g, '')
+    if (/^[0-9]{8}$/.test(digits)) {
+      return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+    }
+    return raw || '--'
+  }
 
   const filteredTradeReports = useMemo(() => {
-    return tradeReportsData.filter((t) => {
-      const afterFrom = fromDate ? t.reportDate >= fromDate : true
-      const beforeTo = toDate ? t.reportDate <= toDate : true
-      const monthOk =
-        viewMode === 'monthly' && monthFilter !== 'all'
-          ? Number(t.reportDate.slice(5, 7)) === Number(monthFilter)
-          : true
-      return afterFrom && beforeTo && monthOk
-    })
-  }, [tradeReportsData, fromDate, toDate, viewMode, monthFilter])
+    return reports
+  }, [reports])
 
   useEffect(() => {
     setPage(1)
-  }, [filteredTradeReports.length, viewMode, fromDate, toDate])
+  }, [filteredTradeReports.length, viewMode, selectedDate])
 
   const pageCount = Math.max(1, Math.ceil(filteredTradeReports.length / pageSize))
   const pagedReports = filteredTradeReports.slice((page - 1) * pageSize, page * pageSize)
@@ -74,44 +89,65 @@ const Reports = () => {
     })
   }
 
-  const deleteTradeReportById = (id: string) => {
-    setTradeReportsData((prev) => prev.filter((t) => t.id !== id))
-  }
-
-  const deleteCurrentFiltered = () => {
-    const ids = new Set(filteredTradeReports.map((t) => t.id))
-    setTradeReportsData((prev) => prev.filter((t) => !ids.has(t.id)))
-  }
-
   // تغيير نطاق التاريخ حسب الاختيار (يومي/أسبوعي/شهري)
   const setPresetRange = (mode: 'daily' | 'weekly' | 'monthly') => {
     setViewMode(mode)
-    if (mode !== 'monthly') setMonthFilter('all')
-    const today = new Date()
-    const pad = (n: number) => n.toString().padStart(2, '0')
-    const toStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    const toDateStr = toStr(today)
-    let from = new Date(today)
-    if (mode === 'daily') {
-      from = today
-    } else if (mode === 'weekly') {
-      from = new Date(today)
-      from.setDate(today.getDate() - 6)
-    } else {
-      from = new Date(today)
-      from.setDate(today.getDate() - 29)
-    }
-    setFromDate(toStr(from))
-    setToDate(toDateStr)
   }
+
+  useEffect(() => {
+    const fetchReports = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const path =
+          viewMode === 'daily'
+            ? '/reports/daily'
+            : viewMode === 'weekly'
+              ? '/reports/weekly'
+              : '/reports/monthly'
+        const query = selectedDate ? `?date=${selectedDate}` : ''
+        const res = await apiClient.get<{ period: string; totalPnL: number; reports: ReportItem[] }>(
+          `${path}${query}`
+        )
+        setReports(res.reports ?? [])
+        setTotalPnL(res.totalPnL ?? 0)
+      } catch (err) {
+        console.error(err)
+        setError('تعذّر تحميل التقارير')
+        setReports([])
+        setTotalPnL(0)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchReports()
+  }, [viewMode, selectedDate])
+
+  useEffect(() => {
+    const fetchAllPeriods = async () => {
+      try {
+        const query = selectedDate ? `?date=${selectedDate}` : ''
+        const [d, w, m] = await Promise.all([
+          apiClient.get<{ totalPnL: number; reports: ReportItem[] }>(`/reports/daily${query}`),
+          apiClient.get<{ totalPnL: number; reports: ReportItem[] }>(`/reports/weekly${query}`),
+          apiClient.get<{ totalPnL: number; reports: ReportItem[] }>(`/reports/monthly${query}`)
+        ])
+        setPeriodSummaries([
+          { id: 'daily', title: 'يومي', totalPnL: d.totalPnL ?? 0, count: d.reports?.length ?? 0 },
+          { id: 'weekly', title: 'أسبوعي', totalPnL: w.totalPnL ?? 0, count: w.reports?.length ?? 0 },
+          { id: 'monthly', title: 'شهري', totalPnL: m.totalPnL ?? 0, count: m.reports?.length ?? 0 }
+        ])
+      } catch (err) {
+        console.error('Failed to load summaries', err)
+      }
+    }
+    fetchAllPeriods()
+  }, [selectedDate])
 
   const summaryStats = useMemo(() => {
     const total = filteredTradeReports.length
-    const wins = filteredTradeReports.filter((t) => t.pl >= 0).length
-    const net = filteredTradeReports.reduce(
-      (acc, t) => acc + (t.currentPrice - t.entryPrice) * t.contracts * 100,
-      0
-    )
+    const wins = filteredTradeReports.filter((t) => t.pnlAmount >= 0).length
+    const net = filteredTradeReports.reduce((acc, t) => acc + (t.pnlAmount ?? 0), 0)
     const winRate = total ? Math.round((wins / total) * 100) : 0
     return { total, wins, net, winRate }
   }, [filteredTradeReports])
@@ -133,46 +169,43 @@ const Reports = () => {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {breakdown.map((item) => (
-            <div key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 shadow-lg space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-base font-semibold text-white">{item.title}</h4>
-                <span
-                  className={`text-xs font-semibold ${
-                    item.color === 'emerald'
-                      ? 'text-emerald-300'
-                      : item.color === 'blue'
-                        ? 'text-sky-300'
-                        : 'text-purple-300'
-                  }`}
-                >
-                  {item.change}
-                </span>
-              </div>
-              <div className="space-y-1 text-sm text-slate-300">
+          {periodSummaries.map((item) => {
+            const color =
+              item.id === 'daily' ? 'emerald' : item.id === 'weekly' ? 'sky' : 'purple'
+            const barColor =
+              color === 'emerald' ? 'bg-emerald-400' : color === 'sky' ? 'bg-sky-400' : 'bg-purple-400'
+            const textColor =
+              color === 'emerald' ? 'text-emerald-300' : color === 'sky' ? 'text-sky-300' : 'text-purple-300'
+            const maxCount = Math.max(...periodSummaries.map((s) => s.count || 0), 1)
+            const barWidth = `${Math.min(100, Math.round((item.count / maxCount) * 100))}%`
+            const isProfit = item.totalPnL >= 0
+            return (
+              <div key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 shadow-lg space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">صافي الربح</span>
-                  <span className="font-semibold text-white">{item.profit}</span>
+                  <h4 className="text-base font-semibold text-white">{item.title}</h4>
+                  <span className={`text-xs font-semibold ${textColor}`}>
+                    {isProfit ? '+' : '-'}
+                    ${Math.abs(item.totalPnL).toFixed(2)}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">عدد الصفقات</span>
-                  <span className="font-semibold text-white">{item.trades}</span>
+                <div className="space-y-1 text-sm text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">صافي الربح</span>
+                    <span className={`font-semibold ${isProfit ? 'text-emerald-300' : 'text-red-400'}`}>
+                      {isProfit ? '+' : '-'}${Math.abs(item.totalPnL).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">عدد الصفقات</span>
+                    <span className="font-semibold text-white">{item.count}</span>
+                  </div>
+                </div>
+                <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div className={`h-full ${barColor}`} style={{ width: barWidth }} />
                 </div>
               </div>
-              <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className={`h-full ${
-                    item.color === 'emerald'
-                      ? 'bg-emerald-400'
-                      : item.color === 'blue'
-                        ? 'bg-sky-400'
-                        : 'bg-purple-400'
-                  }`}
-                  style={{ width: item.id === 'daily' ? '55%' : item.id === 'weekly' ? '70%' : '88%' }}
-                />
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </section>
 
@@ -201,31 +234,35 @@ const Reports = () => {
                 </button>
               ))}
             </div>
-            {viewMode === 'monthly' && (
-              <select
-                value={monthFilter}
-                onChange={(e) => setMonthFilter(e.target.value as typeof monthFilter)}
-                className="rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400"
-              >
-                <option value="all">الشهر (الكل)</option>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={String(m)}>{`الشهر ${m}`}</option>
-                ))}
-              </select>
-            )}
-            <div className="col-span-1 md:col-span-3 flex flex-col md:flex-row gap-3">
+            <div className="col-span-1 md:col-span-2 flex flex-col md:flex-row gap-3">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-full rounded-xl bg-slate-950/80 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-emerald-400"
+              />
               <button
                 type="button"
                 onClick={() => setSummaryOpen(true)}
-                className="flex-1 rounded-xl bg-purple-500/90 text-white font-semibold px-3 py-2 text-sm hover:bg-purple-400 transition"
+                className="w-full md:w-auto rounded-xl bg-purple-500/90 text-white font-semibold px-3 py-2 text-sm hover:bg-purple-400 transition"
               >
-                عرض ملخص النطاق
+                عرض ملخص التقرير
               </button>
             </div>
           </div>
         </div>
 
-        {filteredTradeReports.length === 0 ? (
+        {loading && (
+          <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 text-sm text-slate-400">
+            جاري تحميل التقارير...
+          </div>
+        )}
+        {error && (
+          <div className="rounded-xl border border-red-800 bg-red-950/50 p-4 text-sm text-red-200">
+            {error}
+          </div>
+        )}
+        {!loading && !error && filteredTradeReports.length === 0 ? (
           <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4 text-sm text-slate-400">
             لا توجد تقارير مطابقة للمرشحات الحالية.
           </div>
@@ -233,37 +270,33 @@ const Reports = () => {
           <>
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold text-white">التقارير المعروضة: {filteredTradeReports.length}</h4>
-              <button
-                type="button"
-                onClick={deleteCurrentFiltered}
-                className="inline-flex items-center gap-2 rounded-lg border border-red-500/60 bg-red-500/10 px-3 py-2 text-red-200 text-xs font-semibold hover:border-red-400 hover:bg-red-500/15 transition"
-              >
-                🗑 حذف التقارير الحالية
-              </button>
+              <div className="text-sm text-slate-400">صافي الربح: ${totalPnL.toFixed(2)}</div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {filteredTradeReports.map((t) => {
-                const isProfit = t.pl >= 0
+                const optionType = (t.right ?? (t as any).type ?? '').toUpperCase()
+                const typeLabel = optionType || '--'
+                const isProfit = (t.pnlAmount ?? 0) >= 0
                 return (
                   <div key={t.id} className="rounded-2xl border border-slate-800 bg-slate-950/90 p-4 shadow-lg space-y-3">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-base font-semibold text-white">{t.symbol} ({t.type})</h4>
+                      <h4 className="text-base font-semibold text-white">{t.symbol} ({typeLabel})</h4>
                       <Badge variant={isProfit ? 'emerald' : 'red'}>
                         {isProfit ? 'رابحة' : 'خاسرة'}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>{t.reportDate}</span>
-                      <span>{t.dayLabel}</span>
+                      <span>{t.periodDaily ?? t.closedAt?.slice(0, 10) ?? ''}</span>
+                      <span>{t.reason === 'STOP_LOSS' ? 'إيقاف خسارة' : 'إغلاق يدوي'}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm text-slate-300">
                       <div>
                         <p className="text-xs text-slate-500">سعر الدخول</p>
-                        <p className="font-semibold">${t.entryPrice.toFixed(2)}</p>
+                        <p className="font-semibold">${t.entryPrice?.toFixed(2) ?? '--'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-500">السعر الحالي</p>
-                        <p className="font-semibold">${t.currentPrice.toFixed(2)}</p>
+                        <p className="text-xs text-slate-500">سعر الإغلاق</p>
+                        <p className="font-semibold">${t.closePrice?.toFixed(2) ?? '--'}</p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-500">سترايك</p>
@@ -271,21 +304,21 @@ const Reports = () => {
                       </div>
                       <div>
                         <p className="text-xs text-slate-500">الانتهاء</p>
-                        <p className="font-semibold">{t.expiry}</p>
+                        <p className="font-semibold">{formatExpiryForDisplay(t.expiration)}</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-xs text-slate-500">الربح/الخسارة</span>
                       <span className={`text-base font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
                         {isProfit ? '+' : ''}
-                        {t.pl.toFixed(2)}%
+                        {(t.pnlPercent ?? 0).toFixed(2)}%
                       </span>
                     </div>
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        onClick={() => deleteTradeReportById(t.id)}
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2 text-slate-200 text-xs font-semibold hover:border-red-400 hover:text-red-200 hover:bg-red-500/10 transition"
+                        onClick={() => deleteReport(t.id)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-500/60 bg-red-500/10 px-3 py-2 text-red-200 text-xs font-semibold hover:border-red-400 hover:bg-red-500/15 transition"
                       >
                         🗑 حذف التقرير
                       </button>
@@ -326,7 +359,15 @@ const Reports = () => {
               </div>
               <div className="space-y-1">
                 <p className="text-xs" style={{ color: '#a78bfa' }}>الصافي</p>
-                <p className="text-xl" style={{ color: '#34d399' }}>${summaryStats.net.toFixed(2)}</p>
+                {summaryStats.net >= 0 ? (
+                  <p className="text-xl" style={{ color: '#34d399' }}>
+                    ${summaryStats.net.toFixed(2)}
+                  </p>
+                ) : (
+                  <p className="text-xl" style={{ color: '#f87171' }}>
+                    -${Math.abs(summaryStats.net).toFixed(2)}
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
                 <p className="text-xs" style={{ color: '#a78bfa' }}>نسبة الفوز</p>
@@ -356,12 +397,19 @@ const Reports = () => {
               <span className="text-right">الشركة</span>
               <span className="text-right">النوع</span>
               <span className="text-right">دخول</span>
-              <span className="text-right">اعلى</span>
+          <span className="text-right">الارتفاع</span>
               <span className="text-right">الربح ($)</span>
             </div>
             <div>
               {pagedReports.map((t) => {
-                const profit = (t.currentPrice - t.entryPrice) * t.contracts * 100
+                const optionType = (t.right ?? (t as any).type ?? '').toUpperCase()
+                const typeLabel = optionType || '--'
+                const isCall = optionType === 'CALL'
+                const entry = Number.isFinite(t.entryPrice) ? Number(t.entryPrice) : 0
+                const close = Number.isFinite(t.closePrice) ? Number(t.closePrice) : undefined
+                const current = close ?? entry
+                const contracts = Number.isFinite(t.contracts) ? Number(t.contracts) : 1
+                const profit = (current - entry) * contracts * 100
                 const isProfit = profit >= 0
                 return (
                   <div
@@ -376,17 +424,18 @@ const Reports = () => {
                     <span className="text-right">{t.symbol}</span>
                     <span
                       className="text-right font-semibold"
-                      style={{ color: t.type === 'CALL' ? '#34d399' : '#f87171' }}
+                      style={{ color: isCall ? '#34d399' : '#f87171' }}
                     >
-                      {t.type}
+                      {typeLabel}
                     </span>
-                    <span className="text-right">{t.entryPrice.toFixed(2)}</span>
-                    <span className="text-right">{t.currentPrice.toFixed(2)}</span>
+                    <span className="text-right">{entry.toFixed(2)}</span>
+                    <span className="text-right">{current.toFixed(2)}</span>
                     <span
                       className="text-right font-semibold"
                       style={{ color: isProfit ? '#34d399' : '#f87171' }}
                     >
-                      {profit.toFixed(2)}$
+                      {Math.abs(profit).toFixed(2)}$
+                      {isProfit ? '' : '-'}
                     </span>
                   </div>
                 )

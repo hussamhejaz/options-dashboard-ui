@@ -12,15 +12,29 @@ const TradesTable: FC<Props> = ({ trades }) => {
       <div className="px-4 py-3 border-b border-slate-800 flex items-start md:items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-white leading-tight">قائمة الصفقات</h3>
-          <span className="text-xs text-slate-400 block md:hidden mt-1">بيانات تجريبية محدثة لحظيًا</span>
+          <span className="text-xs text-slate-400 block md:hidden mt-1">يتم التحديث بالزمن شبه الحقيقي</span>
         </div>
-        <span className="hidden md:block text-xs text-slate-400">محدثة لحظيًا (بيانات تجريبية)</span>
+        <span className="hidden md:block text-xs text-slate-400">محدثة كل ثانية تقريبًا</span>
       </div>
       {/* Mobile cards */}
       <div className="md:hidden divide-y divide-slate-800/80">
         {trades.map((trade) => {
-          const isProfit = trade.pl >= 0
-          const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts * 100
+          const entryPrice = Number.isFinite(trade.entryPrice) ? trade.entryPrice : 0
+          const effectivePrice =
+            trade.status === 'closed' && Number.isFinite(trade.closePrice)
+              ? (trade.closePrice as number)
+              : Number.isFinite(trade.currentPrice)
+                ? trade.currentPrice
+                : entryPrice
+          const currentPrice = effectivePrice
+          const rawHigh = trade.highPrice ?? Number.NaN
+          const highVal = Number.isFinite(rawHigh) && rawHigh > 0 ? rawHigh : Math.max(currentPrice, entryPrice)
+          const plValue = Number.isFinite(trade.pl) ? trade.pl : 0
+          const isProfit = plValue >= 0
+          const profitValue =
+            Number.isFinite(trade.pnlAmount)
+              ? Number(trade.pnlAmount)
+              : (currentPrice - entryPrice) * trade.contracts * 100
           return (
             <div key={trade.id} className="p-4 flex flex-col gap-3">
               <div className="flex items-center justify-between">
@@ -50,7 +64,7 @@ const TradesTable: FC<Props> = ({ trades }) => {
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">أعلى</p>
-                  <p className="font-semibold">${(trade.strike / 100).toFixed(2)}</p>
+                  <p className="font-semibold">{highVal !== null ? `$${highVal.toFixed(2)}` : '--'}</p>
                 </div>
               </div>
               <div className="flex items-center justify-between pt-1">
@@ -58,7 +72,7 @@ const TradesTable: FC<Props> = ({ trades }) => {
                 <div className="text-right">
                   <span className={`block text-base font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
                     {isProfit ? '+' : ''}
-                    {trade.pl.toFixed(2)}%
+                    {plValue.toFixed(2)}%
                   </span>
                   <span className="block text-[11px] text-slate-400">
                     {isProfit ? '+' : ''}${profitValue.toFixed(2)}
@@ -87,8 +101,22 @@ const TradesTable: FC<Props> = ({ trades }) => {
           </thead>
           <tbody>
             {trades.map((trade, idx) => {
-              const isProfit = trade.pl >= 0
-              const profitValue = (trade.currentPrice - trade.entryPrice) * trade.contracts * 100
+              const entryPrice = Number.isFinite(trade.entryPrice) ? trade.entryPrice : 0
+              const effectivePrice =
+                trade.status === 'closed' && Number.isFinite(trade.closePrice)
+                  ? (trade.closePrice as number)
+                  : Number.isFinite(trade.currentPrice)
+                    ? trade.currentPrice
+                    : entryPrice
+              const currentPrice = effectivePrice
+              const rawHigh = trade.highPrice ?? Number.NaN
+              const highVal = Number.isFinite(rawHigh) && rawHigh > 0 ? rawHigh : null
+              const plValue = Number.isFinite(trade.pl) ? trade.pl : 0
+              const isProfit = plValue >= 0
+              const profitValue =
+                Number.isFinite(trade.pnlAmount)
+                  ? Number(trade.pnlAmount)
+                  : (currentPrice - entryPrice) * trade.contracts * 100
               return (
                 <tr
                   key={trade.id}
@@ -106,12 +134,12 @@ const TradesTable: FC<Props> = ({ trades }) => {
                   <td className="px-4 py-3 text-slate-200">${trade.strike.toFixed(2)}</td>
                   <td className="px-4 py-3 text-slate-200">{trade.expiry}</td>
                   <td className="px-4 py-3 text-slate-200">${trade.entryPrice.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-slate-200">${(trade.strike / 100).toFixed(2)}</td>
+                  <td className="px-4 py-3 text-slate-200">{highVal !== null ? `$${highVal.toFixed(2)}` : '--'}</td>
                   <td className="px-4 py-3">
                     <div className={`font-semibold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
                       <span className="block">
                         {isProfit ? '+' : ''}
-                        {trade.pl.toFixed(2)}%
+                        {plValue.toFixed(2)}%
                       </span>
                       <span className="block text-xs text-slate-400">
                         {isProfit ? '+' : ''}${profitValue.toFixed(2)}
@@ -119,8 +147,8 @@ const TradesTable: FC<Props> = ({ trades }) => {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge variant={trade.status === 'open' ? 'emerald' : 'gray'}>
-                      {trade.status === 'open' ? 'مفتوحة' : 'مغلقة'}
+                    <Badge variant={trade.status === 'open' ? 'emerald' : trade.status === 'closed' ? 'gray' : 'purple'}>
+                      {trade.status === 'open' ? 'مفتوحة' : trade.status === 'closed' ? 'مغلقة' : 'غير صالحة'}
                     </Badge>
                   </td>
                 </tr>

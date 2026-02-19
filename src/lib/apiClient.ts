@@ -1,5 +1,5 @@
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:5001/api'
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://178.128.33.182:5001'
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown

@@ -73,7 +73,7 @@ export const useCreateTrade = () => {
         right: payload.right,
         strike: payload.strike,
         expiration: payload.expiration,
-        
+
         contracts: payload.contracts,
         entryPrice: payload.entryPrice,
         stopLoss: payload.stopLoss

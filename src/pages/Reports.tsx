@@ -3,6 +3,15 @@ import Badge from '../components/ui/Badge'
 import Modal from '../components/ui/Modal'
 import logo from '../assets/images/logo.jpeg'
 import { apiClient } from '../lib/apiClient'
+import {
+  getReportedClosePrice,
+  getReportedPnlAmount,
+  getReportedPnlPercent,
+  getTradeSuccessLabel,
+  hasActualOutcome,
+  resolveTradeSuccess,
+  toFiniteNumber
+} from '../lib/tradeSuccess'
 
 const Reports = () => {
   const todayIso = new Date().toISOString().slice(0, 10)
@@ -29,8 +38,14 @@ const Reports = () => {
     contracts: number
     entryPrice: number
     closePrice?: number
-    pnlAmount: number
-    pnlPercent: number
+    closePriceActual?: number | null
+    pnlAmount?: number
+    pnlPercent?: number
+    pnlAmountActual?: number | null
+    pnlPercentActual?: number | null
+    isSuccessful?: boolean | null
+    successRule?: string | null
+    usedHighPriceForReport?: boolean | null
     status: string
     reason?: string
     closedAt?: string
@@ -69,6 +84,11 @@ const Reports = () => {
   const filteredTradeReports = useMemo(() => {
     return reports
   }, [reports])
+
+  const toMoney = (value?: number) => {
+    if (!Number.isFinite(value ?? Number.NaN)) return '--'
+    return `$${Number(value).toFixed(2)}`
+  }
 
   useEffect(() => {
     setPage(1)
@@ -109,7 +129,20 @@ const Reports = () => {
         const res = await apiClient.get<{ period: string; totalPnL: number; reports: ReportItem[] }>(
           `${path}${query}`
         )
-        setReports(res.reports ?? [])
+        setReports(
+          (res.reports ?? []).map((item) => ({
+            ...item,
+            isSuccessful: typeof item.isSuccessful === 'boolean' ? item.isSuccessful : undefined,
+            closePrice: toFiniteNumber(item.closePrice),
+            closePriceActual: toFiniteNumber(item.closePriceActual),
+            pnlAmount: toFiniteNumber(item.pnlAmount),
+            pnlPercent: toFiniteNumber(item.pnlPercent),
+            pnlAmountActual: toFiniteNumber(item.pnlAmountActual),
+            pnlPercentActual: toFiniteNumber(item.pnlPercentActual),
+            usedHighPriceForReport:
+              typeof item.usedHighPriceForReport === 'boolean' ? item.usedHighPriceForReport : undefined
+          }))
+        )
         setTotalPnL(res.totalPnL ?? 0)
       } catch (err) {
         console.error(err)
@@ -146,7 +179,9 @@ const Reports = () => {
 
   const summaryStats = useMemo(() => {
     const total = filteredTradeReports.length
-    const wins = filteredTradeReports.filter((t) => t.pnlAmount >= 0).length
+    const wins = filteredTradeReports.filter((t) =>
+      resolveTradeSuccess({ isSuccessful: t.isSuccessful, pnlAmount: t.pnlAmount }).isSuccessful
+    ).length
     const net = filteredTradeReports.reduce((acc, t) => acc + (t.pnlAmount ?? 0), 0)
     const winRate = total ? Math.round((wins / total) * 100) : 0
     return { total, wins, net, winRate }
@@ -276,13 +311,20 @@ const Reports = () => {
               {filteredTradeReports.map((t) => {
                 const optionType = (t.right ?? (t as any).type ?? '').toUpperCase()
                 const typeLabel = optionType || '--'
-                const isProfit = (t.pnlAmount ?? 0) >= 0
+                const successState = resolveTradeSuccess({ isSuccessful: t.isSuccessful, pnlAmount: t.pnlAmount })
+                const isSuccessful = successState.isSuccessful
+                const reportedClosePrice = getReportedClosePrice(t)
+                const reportedPnlPercent = getReportedPnlPercent(t) ?? 0
+                const actualClose = toFiniteNumber(t.closePriceActual)
+                const actualPnlAmount = toFiniteNumber(t.pnlAmountActual)
+                const actualPnlPercent = toFiniteNumber(t.pnlPercentActual)
+                const showActualOutcome = hasActualOutcome(t)
                 return (
                   <div key={t.id} className="rounded-2xl border border-slate-800 bg-slate-950/90 p-4 shadow-lg space-y-3">
                     <div className="flex items-center justify-between">
                       <h4 className="text-base font-semibold text-white">{t.symbol} ({typeLabel})</h4>
-                      <Badge variant={isProfit ? 'emerald' : 'red'}>
-                        {isProfit ? 'رابحة' : 'خاسرة'}
+                      <Badge variant={isSuccessful ? 'emerald' : 'red'}>
+                        {getTradeSuccessLabel({ isSuccessful: t.isSuccessful, pnlAmount: t.pnlAmount })}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-400">
@@ -292,11 +334,11 @@ const Reports = () => {
                     <div className="grid grid-cols-2 gap-3 text-sm text-slate-300">
                       <div>
                         <p className="text-xs text-slate-500">سعر الدخول</p>
-                        <p className="font-semibold">${t.entryPrice?.toFixed(2) ?? '--'}</p>
+                        <p className="font-semibold">{toMoney(toFiniteNumber(t.entryPrice))}</p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-500">سعر الإغلاق</p>
-                        <p className="font-semibold">${t.closePrice?.toFixed(2) ?? '--'}</p>
+                        <p className="font-semibold">{toMoney(reportedClosePrice)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-500">سترايك</p>
@@ -309,11 +351,44 @@ const Reports = () => {
                     </div>
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-xs text-slate-500">الربح/الخسارة</span>
-                      <span className={`text-base font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {isProfit ? '+' : ''}
-                        {(t.pnlPercent ?? 0).toFixed(2)}%
+                      <span className={`text-base font-bold ${reportedPnlPercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {reportedPnlPercent >= 0 ? '+' : ''}
+                        {reportedPnlPercent.toFixed(2)}%
                       </span>
                     </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500">نتيجة التقرير ($)</span>
+                      <span className={`font-semibold ${(getReportedPnlAmount(t) ?? 0) >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                        {(getReportedPnlAmount(t) ?? 0) >= 0 ? '+' : ''}
+                        {(getReportedPnlAmount(t) ?? 0).toFixed(2)}
+                      </span>
+                    </div>
+                    {showActualOutcome && (
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2 space-y-1">
+                        <p className="text-[11px] text-slate-400">الإغلاق الفعلي</p>
+                        <div className="flex items-center justify-between text-xs text-slate-300">
+                          <span>السعر</span>
+                          <span>{toMoney(actualClose)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-slate-300">
+                          <span>النتيجة ($)</span>
+                          <span>
+                            {actualPnlAmount !== undefined ? `${actualPnlAmount >= 0 ? '+' : ''}${actualPnlAmount.toFixed(2)}` : '--'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-slate-300">
+                          <span>النتيجة (%)</span>
+                          <span>
+                            {actualPnlPercent !== undefined ? `${actualPnlPercent >= 0 ? '+' : ''}${actualPnlPercent.toFixed(2)}%` : '--'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {t.usedHighPriceForReport && (
+                      <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-200">
+                        تم اعتماد أعلى سعر في التقرير
+                      </div>
+                    )}
                     <div className="flex justify-end">
                       <button
                         type="button"
@@ -406,10 +481,8 @@ const Reports = () => {
                 const typeLabel = optionType || '--'
                 const isCall = optionType === 'CALL'
                 const entry = Number.isFinite(t.entryPrice) ? Number(t.entryPrice) : 0
-                const close = Number.isFinite(t.closePrice) ? Number(t.closePrice) : undefined
-                const current = close ?? entry
-                const contracts = Number.isFinite(t.contracts) ? Number(t.contracts) : 1
-                const profit = (current - entry) * contracts * 100
+                const current = getReportedClosePrice(t) ?? entry
+                const profit = getReportedPnlAmount(t) ?? 0
                 const isProfit = profit >= 0
                 return (
                   <div

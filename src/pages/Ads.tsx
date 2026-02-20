@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Button from '../components/ui/Button'
 import { apiClient } from '../lib/apiClient'
 import type { Trade } from '../types/trade'
+import { resolveTradeSuccess, toFiniteNumber } from '../lib/tradeSuccess'
+import { deleteAdByIdRequest } from '../lib/adsDeletion'
 
 type ActionStatus = 'idle' | 'success' | 'error'
 
@@ -13,9 +15,40 @@ type WinnerApi = {
   expiration?: string
   entryPrice?: number | string | null
   closePrice?: number | string | null
+  closePriceActual?: number | string | null
   pnl?: number | string | null
+  pnlAmount?: number | string | null
+  pnlAmountActual?: number | string | null
   pnlPercent?: number | string | null
+  pnlPercentActual?: number | string | null
   contracts?: number | string | null
+  isSuccessful?: boolean | null
+  successRule?: string | null
+  usedHighPriceForReport?: boolean | null
+}
+
+type AdApi = {
+  id?: string
+  _id?: string
+  adId?: string
+  docId?: string
+  tradeId?: string
+  trade_id?: string
+  sourceTradeId?: string
+  trade?: { id?: string; tradeId?: string } | null
+}
+
+type CreateAdResponse = {
+  id?: string
+  _id?: string
+  adId?: string
+  docId?: string
+  ad?: {
+    id?: string
+    _id?: string
+    adId?: string
+    docId?: string
+  } | null
 }
 
 const toNumber = (value: unknown, fallback = 0): number => {
@@ -42,7 +75,13 @@ const normalizeWinner = (item: WinnerApi, index: number): Trade => {
     entryPrice,
     currentPrice,
     closePrice,
-    pnlAmount: item.pnl !== undefined ? toNumber(item.pnl, 0) : undefined,
+    closePriceActual: toFiniteNumber(item.closePriceActual),
+    pnlAmount: item.pnlAmount !== undefined ? toNumber(item.pnlAmount, 0) : item.pnl !== undefined ? toNumber(item.pnl, 0) : undefined,
+    pnlAmountActual: toFiniteNumber(item.pnlAmountActual),
+    pnlPercentActual: toFiniteNumber(item.pnlPercentActual),
+    isSuccessful: typeof item.isSuccessful === 'boolean' ? item.isSuccessful : undefined,
+    successRule: item.successRule ?? undefined,
+    usedHighPriceForReport: typeof item.usedHighPriceForReport === 'boolean' ? item.usedHighPriceForReport : undefined,
     pl,
     status: 'closed',
     contracts: Math.max(1, Math.trunc(toNumber(item.contracts, 1)))
@@ -51,9 +90,13 @@ const normalizeWinner = (item: WinnerApi, index: number): Trade => {
 
 const Ads = () => {
   const [winningTrades, setWinningTrades] = useState<Trade[]>([])
+  const [adIdByTradeId, setAdIdByTradeId] = useState<Record<string, string>>({})
+  const [deletedTradeIds, setDeletedTradeIds] = useState<Record<string, true>>({})
   const [loading, setLoading] = useState(false)
   const [creatingId, setCreatingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [status, setStatus] = useState<ActionStatus>('idle')
+  const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const loadWinningTrades = useCallback(async () => {
@@ -62,23 +105,55 @@ const Ads = () => {
     try {
       const payload = await apiClient.get<WinnerApi[]>('/trades/winners', { timeoutMs: 12000 })
       const winners = Array.isArray(payload) ? payload.map((item, index) => normalizeWinner(item, index)) : []
-      setWinningTrades(winners)
+      setWinningTrades(
+        winners
+          .filter((trade) =>
+            resolveTradeSuccess({ isSuccessful: trade.isSuccessful, pnlAmount: trade.pnlAmount }).isSuccessful
+          )
+          .filter((trade) => !deletedTradeIds[trade.id])
+      )
     } catch (err) {
       console.error(err)
       setWinningTrades([])
-      setError('تعذر تحميل الصفقات الرابحة')
+      setError('تعذر تحميل الصفقات الناجحة')
     } finally {
       setLoading(false)
+    }
+  }, [deletedTradeIds])
+
+  const loadAdsIndex = useCallback(async (): Promise<Record<string, string>> => {
+    try {
+      const payload = await apiClient.get<AdApi[] | { ads?: AdApi[]; items?: AdApi[]; data?: AdApi[] }>('/ads', {
+        timeoutMs: 12000
+      })
+
+      const adsList = Array.isArray(payload) ? payload : payload.ads ?? payload.items ?? payload.data ?? []
+      const map: Record<string, string> = {}
+      adsList.forEach((ad) => {
+        const tradeId = String(
+          ad.tradeId ?? ad.trade_id ?? ad.sourceTradeId ?? ad.trade?.id ?? ad.trade?.tradeId ?? ''
+        ).trim()
+        const adId = String(ad.id ?? ad._id ?? ad.adId ?? ad.docId ?? '').trim()
+        if (tradeId && adId) map[tradeId] = adId
+      })
+      setAdIdByTradeId(map)
+      return map
+    } catch (err) {
+      console.error(err)
+      setAdIdByTradeId({})
+      return {}
     }
   }, [])
 
   useEffect(() => {
     loadWinningTrades()
+    loadAdsIndex()
     const intervalId = window.setInterval(() => {
       loadWinningTrades()
+      loadAdsIndex()
     }, 5000)
     return () => window.clearInterval(intervalId)
-  }, [loadWinningTrades])
+  }, [loadWinningTrades, loadAdsIndex])
 
   const handleCreateFromTrade = async (trade: Trade) => {
     if (!isValidTicker(String(trade.symbol ?? ''))) {
@@ -89,9 +164,10 @@ const Ads = () => {
 
     setCreatingId(trade.id)
     setStatus('idle')
+    setNotice(null)
     setError(null)
     try {
-      await apiClient.post(
+      const createRes = await apiClient.post<CreateAdResponse>(
         '/ads/send-from-trade',
         {
           tradeId: trade.id,
@@ -100,6 +176,21 @@ const Ads = () => {
         { timeoutMs: 120000 }
       )
       setStatus('success')
+      const createdAdId = String(
+        createRes?.id ??
+          createRes?._id ??
+          createRes?.adId ??
+          createRes?.docId ??
+          createRes?.ad?.id ??
+          createRes?.ad?._id ??
+          createRes?.ad?.adId ??
+          createRes?.ad?.docId ??
+          ''
+      ).trim()
+      if (createdAdId) {
+        setAdIdByTradeId((prev) => ({ ...prev, [trade.id]: createdAdId }))
+      }
+      await loadAdsIndex()
     } catch (err) {
       console.error(err)
       setStatus('error')
@@ -109,22 +200,66 @@ const Ads = () => {
     }
   }
 
+  const handleDeleteAd = async (tradeId: string) => {
+    if (deletingId === tradeId) return
+    const confirmed = window.confirm('هل أنت متأكد من حذف هذا الإعلان؟')
+    if (!confirmed) return
+
+    setDeletingId(tradeId)
+    setStatus('idle')
+    setNotice(null)
+    setError(null)
+
+    // Always refresh mapping right before deletion to avoid stale IDs in UI.
+    const refreshedMap = await loadAdsIndex()
+    const adId = refreshedMap[tradeId] ?? adIdByTradeId[tradeId]
+
+    if (!adId) {
+      setStatus('error')
+      setError('لا يوجد إعلان مرتبط بهذه الصفقة.')
+      setDeletingId(null)
+      return
+    }
+
+    const outcome = await deleteAdByIdRequest(adId)
+    if (outcome.kind === 'success' || outcome.kind === 'not_found') {
+      setWinningTrades((prev) => prev.filter((trade) => trade.id !== tradeId))
+      setAdIdByTradeId((prev) => {
+        const next = { ...prev }
+        delete next[tradeId]
+        return next
+      })
+      setDeletedTradeIds((prev) => ({ ...prev, [tradeId]: true }))
+      setNotice(
+        outcome.kind === 'success'
+          ? outcome.message
+          : 'الإعلان غير موجود (قد يكون تم حذفه مسبقًا). جاري تحديث القائمة...'
+      )
+      await Promise.all([loadAdsIndex(), loadWinningTrades()])
+    } else {
+      setStatus('error')
+      setError(outcome.message ?? 'تعذر حذف الإعلان')
+    }
+    setDeletingId(null)
+  }
+
   return (
     <div className="space-y-6" dir="rtl">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">إعلانات تيليجرام</h2>
           <p className="text-slate-400 text-sm mt-1">
-            هنا يتم عرض الصفقات الرابحة فقط. اختر أي صفقة لإنشاء إعلان مباشر من الباك-إند.
+            هنا يتم عرض الصفقات الناجحة فقط. اختر أي صفقة لإنشاء إعلان مباشر من الباك-إند.
           </p>
         </div>
         <Button variant="secondary" onClick={loadWinningTrades} disabled={loading}>
-          {loading ? '...جاري التحديث' : 'تحديث الصفقات الرابحة'}
+          {loading ? '...جاري التحديث' : 'تحديث الصفقات الناجحة'}
         </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         {status === 'success' && <span className="text-emerald-300">تم إنشاء الإعلان وإرساله إلى تيليجرام</span>}
+        {notice && <span className="text-emerald-300">{notice}</span>}
         {status === 'error' && <span className="text-red-300">فشل إنشاء/إرسال الإعلان</span>}
         {error && <span className="text-red-400">{error}</span>}
       </div>
@@ -132,19 +267,21 @@ const Ads = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {loading && (
           <div className="col-span-full text-sm text-slate-300 border border-slate-700 rounded-xl p-4 text-center">
-            جاري تحميل الصفقات الرابحة...
+            جاري تحميل الصفقات الناجحة...
           </div>
         )}
 
         {winningTrades.map((trade) => {
           const tickerIsValid = isValidTicker(String(trade.symbol ?? ''))
-          const isProfit = Number(trade.pl ?? 0) >= 0
+          const successState = resolveTradeSuccess({ isSuccessful: trade.isSuccessful, pnlAmount: trade.pnlAmount })
+          const isSuccessful = successState.isSuccessful
+          const pnlPercent = Number(trade.pl ?? 0)
           const currentPrice = Number.isFinite(trade.currentPrice) ? trade.currentPrice : trade.entryPrice
           const closePrice = Number.isFinite(trade.closePrice ?? Number.NaN) ? Number(trade.closePrice) : currentPrice
-          const pnlAmount =
-            Number.isFinite(trade.pnlAmount)
-              ? Number(trade.pnlAmount)
-              : (closePrice - trade.entryPrice) * (trade.contracts ?? 1) * 100
+          const pnlAmount = toFiniteNumber(trade.pnlAmount) ?? 0
+          const actualPnlAmount = toFiniteNumber(trade.pnlAmountActual)
+          const isActuallyProfitable = (actualPnlAmount ?? pnlAmount) > 0
+          const statusLabel = trade.isSuccessful === true ? 'صفقة ناجحة' : isActuallyProfitable ? 'صفقة رابحة' : 'صفقة ناجحة'
 
           return (
             <article
@@ -159,9 +296,27 @@ const Ads = () => {
                   </div>
                   <div className="text-sm text-slate-300">{trade.expiry}</div>
                 </div>
-                <div className="rounded-full bg-emerald-500/10 border border-emerald-500/40 px-3 py-1 text-xs text-emerald-300">
-                  رابحة
+                <div
+                  className={`rounded-full px-3 py-1 text-xs border ${
+                    isSuccessful
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300'
+                      : 'bg-red-500/10 border-red-500/40 text-red-300'
+                  }`}
+                >
+                  {statusLabel}
                 </div>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {trade.successRule === 'PROFIT_TARGET_50_REACHED' && (
+                  <span className="rounded-full border border-amber-400/50 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-300">
+                    نجاح بتحقيق هدف 50$
+                  </span>
+                )}
+                {trade.usedHighPriceForReport && (
+                  <span className="rounded-full border border-sky-400/50 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-300">
+                    تم اعتماد أعلى سعر في التقرير
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-sm text-slate-200">
@@ -180,14 +335,19 @@ const Ads = () => {
               </div>
 
               <div className="text-right space-y-1">
-                <div className={`text-lg font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {isProfit ? '+' : ''}
-                  {Number(trade.pl ?? 0).toFixed(2)}%
+                <div className={`text-lg font-bold ${pnlPercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {pnlPercent >= 0 ? '+' : ''}
+                  {pnlPercent.toFixed(2)}%
                 </div>
                 <div className="text-sm text-slate-300">
                   {pnlAmount >= 0 ? '+' : ''}
                   ${Number(pnlAmount ?? 0).toFixed(2)}
                 </div>
+                {toFiniteNumber(trade.pnlAmountActual) !== undefined && (
+                  <div className="text-xs text-slate-400">
+                    الربح الفعلي: {actualPnlAmount! >= 0 ? '+' : ''}${actualPnlAmount!.toFixed(2)}
+                  </div>
+                )}
                 {!tickerIsValid && (
                   <div className="text-xs text-amber-300">
                     رمز السهم غير صالح للإرسال إلى تيليجرام.
@@ -199,9 +359,17 @@ const Ads = () => {
                 <Button
                   className="flex-1 bg-emerald-600/90 hover:bg-emerald-500 text-white"
                   onClick={() => handleCreateFromTrade(trade)}
-                  disabled={creatingId === trade.id || !tickerIsValid}
+                  disabled={creatingId === trade.id || deletingId === trade.id || !tickerIsValid}
                 >
                   {creatingId === trade.id ? '...جاري الإرسال' : 'إنشاء + إرسال إلى تيليجرام'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="border border-red-500/50 text-red-300 hover:text-white hover:border-red-400"
+                  onClick={() => handleDeleteAd(trade.id)}
+                  disabled={deletingId === trade.id || creatingId === trade.id}
+                >
+                  {deletingId === trade.id ? '...جارٍ الحذف' : 'حذف الإعلان'}
                 </Button>
               </div>
             </article>
@@ -210,7 +378,7 @@ const Ads = () => {
 
         {winningTrades.length === 0 && !loading && (
           <div className="col-span-full text-sm text-slate-400 border border-dashed border-slate-700 rounded-xl p-4 text-center">
-            لا توجد صفقات رابحة حالياً. تأكد أن هناك صفقات بحالة CLOSED وقيمة pnl أكبر من 0.
+            لا توجد صفقات ناجحة حالياً. تأكد أن هناك صفقات مغلقة بحقل isSuccessful=true أو pnl أكبر من 0.
           </div>
         )}
       </div>

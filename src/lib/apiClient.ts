@@ -1,6 +1,31 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'https://api.rukn.life'
 
+const buildUrl = (path: string): string => {
+  const trimmed = String(path ?? '').trim()
+  const normalizedPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const baseHasApi = /\/api$/i.test(API_BASE_URL)
+  const pathHasApi = /^\/api(\/|$)/i.test(normalizedPath)
+
+  if (baseHasApi) {
+    const safePath = pathHasApi ? normalizedPath.replace(/^\/api/i, '') || '/' : normalizedPath
+    return `${API_BASE_URL}${safePath}`
+  }
+
+  const safePath = pathHasApi ? normalizedPath : `/api${normalizedPath}`
+  return `${API_BASE_URL}${safePath}`
+}
+
+export class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown
   timeoutMs?: number
@@ -34,7 +59,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(buildUrl(path), {
       method: 'GET',
       ...rest,
       signal: controller.signal,
@@ -47,7 +72,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
     if (!response.ok) {
       const message = await readErrorMessage(response)
-      throw new Error(message || `Request failed with status ${response.status}`)
+      throw new ApiError(message || `Request failed with status ${response.status}`, response.status)
     }
 
     if (response.status === 204) {
@@ -57,6 +82,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
     return response.json() as Promise<T>
   } catch (err) {
+    if (err instanceof ApiError) {
+      throw err
+    }
     if (err instanceof DOMException && err.name === 'AbortError') {
       if (didTimeout) {
         throw new Error('انتهت مهلة الاتصال بالخادم. حاول مرة أخرى.')

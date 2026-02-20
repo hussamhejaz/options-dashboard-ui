@@ -1,5 +1,5 @@
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://192.168.100.63:5002/api'
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'https://api.rukn.life/api'
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown

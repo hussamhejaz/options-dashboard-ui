@@ -63,3 +63,21 @@ export const deleteAdByIdRequest = async (adId: string): Promise<DeleteAdOutcome
     return { kind: 'error', message: 'تعذر الاتصال بالخادم. حاول مرة أخرى.' }
   }
 }
+
+export const deleteAdsByTradeRequest = async (tradeId: string): Promise<DeleteAdOutcome> => {
+  const id = String(tradeId ?? '').trim()
+  if (!id) return { kind: 'error', message: 'معرّف الصفقة غير صالح' }
+
+  try {
+    await apiClient.delete(`/ads/trade/${encodeURIComponent(id)}`, { timeoutMs: 12000 })
+    return { kind: 'success', message: 'تم حذف الإعلان' }
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      return { kind: 'not_found', message: 'الإعلان غير موجود' }
+    }
+    if (err instanceof Error) {
+      return { kind: 'error', message: err.message || 'تعذر حذف الإعلان' }
+    }
+    return { kind: 'error', message: 'تعذر الاتصال بالخادم. حاول مرة أخرى.' }
+  }
+}

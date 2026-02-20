@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import Button from '../components/ui/Button'
 import { apiClient } from '../lib/apiClient'
 import type { Trade } from '../types/trade'
 import { resolveTradeSuccess, toFiniteNumber } from '../lib/tradeSuccess'
-import { deleteAdByIdRequest } from '../lib/adsDeletion'
+import { deleteAdsByTradeRequest } from '../lib/adsDeletion'
 
 type ActionStatus = 'idle' | 'success' | 'error'
+const HIDDEN_TRADES_STORAGE_KEY = 'ads:hiddenTradeIds:v1'
 
 type WinnerApi = {
   id?: string
@@ -25,17 +26,6 @@ type WinnerApi = {
   isSuccessful?: boolean | null
   successRule?: string | null
   usedHighPriceForReport?: boolean | null
-}
-
-type AdApi = {
-  id?: string
-  _id?: string
-  adId?: string
-  docId?: string
-  tradeId?: string
-  trade_id?: string
-  sourceTradeId?: string
-  trade?: { id?: string; tradeId?: string } | null
 }
 
 type CreateAdResponse = {
@@ -88,10 +78,28 @@ const normalizeWinner = (item: WinnerApi, index: number): Trade => {
   }
 }
 
+const loadHiddenTradeIds = (): Record<string, true> => {
+  try {
+    const raw = window.localStorage.getItem(HIDDEN_TRADES_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, true>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+const saveHiddenTradeIds = (value: Record<string, true>) => {
+  try {
+    window.localStorage.setItem(HIDDEN_TRADES_STORAGE_KEY, JSON.stringify(value))
+  } catch {
+    // no-op
+  }
+}
+
 const Ads = () => {
   const [winningTrades, setWinningTrades] = useState<Trade[]>([])
-  const [adIdByTradeId, setAdIdByTradeId] = useState<Record<string, string>>({})
-  const [deletedTradeIds, setDeletedTradeIds] = useState<Record<string, true>>({})
+  const deletedTradeIdsRef = useRef<Record<string, true>>(loadHiddenTradeIds())
   const [loading, setLoading] = useState(false)
   const [creatingId, setCreatingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -110,7 +118,7 @@ const Ads = () => {
           .filter((trade) =>
             resolveTradeSuccess({ isSuccessful: trade.isSuccessful, pnlAmount: trade.pnlAmount }).isSuccessful
           )
-          .filter((trade) => !deletedTradeIds[trade.id])
+          .filter((trade) => !deletedTradeIdsRef.current[trade.id])
       )
     } catch (err) {
       console.error(err)
@@ -119,41 +127,7 @@ const Ads = () => {
     } finally {
       setLoading(false)
     }
-  }, [deletedTradeIds])
-
-  const loadAdsIndex = useCallback(async (): Promise<Record<string, string>> => {
-    try {
-      const payload = await apiClient.get<AdApi[] | { ads?: AdApi[]; items?: AdApi[]; data?: AdApi[] }>('/ads', {
-        timeoutMs: 12000
-      })
-
-      const adsList = Array.isArray(payload) ? payload : payload.ads ?? payload.items ?? payload.data ?? []
-      const map: Record<string, string> = {}
-      adsList.forEach((ad) => {
-        const tradeId = String(
-          ad.tradeId ?? ad.trade_id ?? ad.sourceTradeId ?? ad.trade?.id ?? ad.trade?.tradeId ?? ''
-        ).trim()
-        const adId = String(ad.id ?? ad._id ?? ad.adId ?? ad.docId ?? '').trim()
-        if (tradeId && adId) map[tradeId] = adId
-      })
-      setAdIdByTradeId(map)
-      return map
-    } catch (err) {
-      console.error(err)
-      setAdIdByTradeId({})
-      return {}
-    }
   }, [])
-
-  useEffect(() => {
-    loadWinningTrades()
-    loadAdsIndex()
-    const intervalId = window.setInterval(() => {
-      loadWinningTrades()
-      loadAdsIndex()
-    }, 5000)
-    return () => window.clearInterval(intervalId)
-  }, [loadWinningTrades, loadAdsIndex])
 
   const handleCreateFromTrade = async (trade: Trade) => {
     if (!isValidTicker(String(trade.symbol ?? ''))) {
@@ -187,10 +161,9 @@ const Ads = () => {
           createRes?.ad?.docId ??
           ''
       ).trim()
-      if (createdAdId) {
-        setAdIdByTradeId((prev) => ({ ...prev, [trade.id]: createdAdId }))
+      if (!createdAdId) {
+        setNotice('تم الإرسال ولكن لم يتم استلام adId من الخادم.')
       }
-      await loadAdsIndex()
     } catch (err) {
       console.error(err)
       setStatus('error')
@@ -210,32 +183,16 @@ const Ads = () => {
     setNotice(null)
     setError(null)
 
-    // Always refresh mapping right before deletion to avoid stale IDs in UI.
-    const refreshedMap = await loadAdsIndex()
-    const adId = refreshedMap[tradeId] ?? adIdByTradeId[tradeId]
-
-    if (!adId) {
-      setStatus('error')
-      setError('لا يوجد إعلان مرتبط بهذه الصفقة.')
-      setDeletingId(null)
-      return
-    }
-
-    const outcome = await deleteAdByIdRequest(adId)
+    const outcome = await deleteAdsByTradeRequest(tradeId)
     if (outcome.kind === 'success' || outcome.kind === 'not_found') {
       setWinningTrades((prev) => prev.filter((trade) => trade.id !== tradeId))
-      setAdIdByTradeId((prev) => {
-        const next = { ...prev }
-        delete next[tradeId]
-        return next
-      })
-      setDeletedTradeIds((prev) => ({ ...prev, [tradeId]: true }))
+      deletedTradeIdsRef.current = { ...deletedTradeIdsRef.current, [tradeId]: true }
+      saveHiddenTradeIds(deletedTradeIdsRef.current)
       setNotice(
         outcome.kind === 'success'
           ? outcome.message
           : 'الإعلان غير موجود (قد يكون تم حذفه مسبقًا). جاري تحديث القائمة...'
       )
-      await Promise.all([loadAdsIndex(), loadWinningTrades()])
     } else {
       setStatus('error')
       setError(outcome.message ?? 'تعذر حذف الإعلان')
@@ -260,8 +217,7 @@ const Ads = () => {
       <div className="flex flex-wrap items-center gap-3 text-sm">
         {status === 'success' && <span className="text-emerald-300">تم إنشاء الإعلان وإرساله إلى تيليجرام</span>}
         {notice && <span className="text-emerald-300">{notice}</span>}
-        {status === 'error' && <span className="text-red-300">فشل إنشاء/إرسال الإعلان</span>}
-        {error && <span className="text-red-400">{error}</span>}
+        {error && <span className="text-red-400">خطأ: {error}</span>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -368,6 +324,7 @@ const Ads = () => {
                   className="border border-red-500/50 text-red-300 hover:text-white hover:border-red-400"
                   onClick={() => handleDeleteAd(trade.id)}
                   disabled={deletingId === trade.id || creatingId === trade.id}
+                  title="حذف الإعلان"
                 >
                   {deletingId === trade.id ? '...جارٍ الحذف' : 'حذف الإعلان'}
                 </Button>

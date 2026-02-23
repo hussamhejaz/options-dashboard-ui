@@ -129,6 +129,7 @@ const Ads = () => {
     }
   }, [])
 
+
   const handleCreateFromTrade = async (trade: Trade) => {
     if (!isValidTicker(String(trade.symbol ?? ''))) {
       setStatus('error')
@@ -150,6 +151,7 @@ const Ads = () => {
         { timeoutMs: 120000 }
       )
       setStatus('success')
+
       const createdAdId = String(
         createRes?.id ??
           createRes?._id ??
@@ -161,6 +163,7 @@ const Ads = () => {
           createRes?.ad?.docId ??
           ''
       ).trim()
+
       if (!createdAdId) {
         setNotice('تم الإرسال ولكن لم يتم استلام adId من الخادم.')
       }

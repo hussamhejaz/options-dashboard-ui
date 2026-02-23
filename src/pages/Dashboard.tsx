@@ -18,8 +18,16 @@ type DashboardTrade = {
   lastMidPrice?: number
   contracts?: number
   pnlAmount?: number
+  pnl?: number
   pnlPercent?: number
   closePrice?: number
+  closePriceActual?: number | null
+  pnlActual?: number | null
+  pnlPercentActual?: number | null
+  peakPriceReached?: number | null
+  peakRisePrice?: number | null
+  peakRisePercent?: number | null
+  peakPnlAmount?: number | null
 }
 
 const mapDashToTrade = (t: DashboardTrade): Trade => {
@@ -39,7 +47,15 @@ const mapDashToTrade = (t: DashboardTrade): Trade => {
     currentPrice,
     highPrice: Number.isFinite(rawHigh) && rawHigh > 0 ? Number(rawHigh) : null,
     closePrice: Number.isFinite(t.closePrice ?? NaN) ? Number(t.closePrice) : undefined,
-    pnlAmount: Number(t.pnlAmount ?? 0),
+    closePriceActual: Number.isFinite(t.closePriceActual ?? NaN) ? Number(t.closePriceActual) : null,
+    pnl: Number.isFinite(t.pnl ?? NaN) ? Number(t.pnl) : Number.isFinite(t.pnlAmount ?? NaN) ? Number(t.pnlAmount) : undefined,
+    pnlAmount: Number.isFinite(t.pnlAmount ?? NaN) ? Number(t.pnlAmount) : undefined,
+    pnlActual: Number.isFinite(t.pnlActual ?? NaN) ? Number(t.pnlActual) : null,
+    pnlPercentActual: Number.isFinite(t.pnlPercentActual ?? NaN) ? Number(t.pnlPercentActual) : null,
+    peakPriceReached: Number.isFinite(t.peakPriceReached ?? NaN) ? Number(t.peakPriceReached) : null,
+    peakRisePrice: Number.isFinite(t.peakRisePrice ?? NaN) ? Number(t.peakRisePrice) : null,
+    peakRisePercent: Number.isFinite(t.peakRisePercent ?? NaN) ? Number(t.peakRisePercent) : null,
+    peakPnlAmount: Number.isFinite(t.peakPnlAmount ?? NaN) ? Number(t.peakPnlAmount) : null,
     lastMidPrice: Number(t.lastMidPrice ?? 0),
     pl: Number(t.pnlPercent ?? 0),
     status: t.status === 'CLOSED' ? 'closed' : t.status === 'INVALID' ? 'invalid' : 'open',
@@ -75,11 +91,11 @@ const Dashboard = () => {
 
   const stats = useMemo(() => {
     const totalPnL = summary?.netProfit ?? closedTrades.reduce((sum, t) => sum + Number(t.pnlAmount ?? 0), 0)
-    const closedCount = summary?.closedCount ?? closedTrades.length
     const wins = summary?.winCount ?? closedTrades.filter((t) => Number(t.pnlAmount ?? 0) > 0).length
     const openCount = summary?.openCount ?? openTrades.length
-    const winRate = summary?.winRate ?? (closedCount ? Math.round((wins / closedCount) * 100) : 0)
     const losses = summary?.lossCount ?? closedTrades.filter((t) => Number(t.pnlAmount ?? 0) <= 0).length
+    const winRate = Number.isFinite(summary?.winRate ?? Number.NaN) ? Number(summary?.winRate) : 0
+    const formattedWinRate = `${winRate.toFixed(2)}%`
     return [
       { id: 'wins', label: 'صفقات رابحة', value: `${wins}`, delta: '' },
       { id: 'losses', label: 'صفقات خاسرة', value: `${losses}`, delta: '' },
@@ -87,8 +103,13 @@ const Dashboard = () => {
       {
         id: 'pnl',
         label: 'صافي الربح',
-        value: `$${totalPnL.toFixed(2)}`,
-        delta: `${winRate}% معدل الفوز`
+        value: `$${totalPnL.toFixed(2)}`
+      },
+      {
+        id: 'win-rate',
+        label: 'إجمالي نسب الربح',
+        value: formattedWinRate,
+        helperText: 'مجموع نسب الصفقات المؤهلة (قد تتجاوز 100%)'
       }
     ]
   }, [openTrades, closedTrades, summary])
@@ -146,9 +167,9 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         {stats.map((stat) => (
-          <StatCard key={stat.id} label={stat.label} value={stat.value} delta={stat.delta} />
+          <StatCard key={stat.id} label={stat.label} value={stat.value} delta={stat.delta} helperText={stat.helperText} />
         ))}
       </section>
 

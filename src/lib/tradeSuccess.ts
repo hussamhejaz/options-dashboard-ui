@@ -7,11 +7,14 @@ export type TradeSuccessInput = {
 }
 
 export type ReportOutcomeInput = TradeSuccessInput & {
+  highPrice?: Numeric
   closePrice?: Numeric
   pnlPercent?: Numeric
   closePriceActual?: Numeric
+  pnlActual?: Numeric
   pnlAmountActual?: Numeric
   pnlPercentActual?: Numeric
+  peakPriceReached?: Numeric
 }
 
 export const toFiniteNumber = (value: Numeric): number | undefined => {
@@ -33,6 +36,7 @@ export const getTradeSuccessLabel = (trade: TradeSuccessInput): 'ناجحة' | '
 
 export const hasActualOutcome = (trade: ReportOutcomeInput): boolean =>
   toFiniteNumber(trade.closePriceActual) !== undefined ||
+  toFiniteNumber(trade.pnlActual) !== undefined ||
   toFiniteNumber(trade.pnlAmountActual) !== undefined ||
   toFiniteNumber(trade.pnlPercentActual) !== undefined
 
@@ -40,7 +44,15 @@ export const getReportedClosePrice = (trade: ReportOutcomeInput): number | undef
   toFiniteNumber(trade.closePrice)
 
 export const getReportedPnlAmount = (trade: ReportOutcomeInput): number | undefined =>
-  toFiniteNumber(trade.pnlAmount) ?? toFiniteNumber(trade.pnl)
+  toFiniteNumber(trade.pnl) ?? toFiniteNumber(trade.pnlAmount)
 
 export const getReportedPnlPercent = (trade: ReportOutcomeInput): number | undefined =>
   toFiniteNumber(trade.pnlPercent)
+
+export const getActualPnlAmount = (trade: ReportOutcomeInput): number | undefined =>
+  toFiniteNumber(trade.pnlActual) ?? toFiniteNumber(trade.pnlAmountActual)
+
+export const getReportedElevationPrice = (trade: ReportOutcomeInput): number | undefined =>
+  toFiniteNumber(trade.peakPriceReached) ??
+  toFiniteNumber(trade.highPrice) ??
+  toFiniteNumber(trade.closePrice)

@@ -4,10 +4,11 @@ type StatCardProps = {
   label: string
   value: string
   delta?: string
+  helperText?: string
   icon?: ReactNode
 }
 
-const StatCard: FC<StatCardProps> = ({ label, value, delta, icon }) => {
+const StatCard: FC<StatCardProps> = ({ label, value, delta, helperText, icon }) => {
   const positive = delta ? delta.startsWith('+') : false
   return (
     <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 shadow-lg hover:border-emerald-500/40 transition">
@@ -23,6 +24,7 @@ const StatCard: FC<StatCardProps> = ({ label, value, delta, icon }) => {
           </span>
         )}
       </div>
+      {helperText && <p className="mt-2 text-[11px] leading-4 text-slate-500">{helperText}</p>}
     </div>
   )
 }

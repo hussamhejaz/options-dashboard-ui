@@ -12,6 +12,18 @@ export type Trade = {
   highPrice?: number | null
   closePrice?: number
   closePriceActual?: number | null
+  /** Main report PnL from backend (peak-based logic) */
+  pnl?: number | null
+  /** Actual exit PnL from backend */
+  pnlActual?: number | null
+  /** Peak/highest price reached while trade was open */
+  peakPriceReached?: number | null
+  /** Peak rise in price from entry */
+  peakRisePrice?: number | null
+  /** Peak rise percent from entry */
+  peakRisePercent?: number | null
+  /** PnL amount at peak/high price */
+  peakPnlAmount?: number | null
   /** Absolute PnL in dollars if provided by the API */
   pnlAmount?: number
   /** Absolute actual close PnL in dollars if provided by the API */

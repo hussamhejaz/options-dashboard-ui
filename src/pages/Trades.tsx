@@ -46,9 +46,17 @@ type DashboardTrade = {
   updatedAt?: string
   contracts?: number
   pnlAmount?: number
+  pnl?: number
   pnlPercent?: number
+  pnlActual?: number | null
+  pnlPercentActual?: number | null
   stopLoss?: number | null
   closePrice?: number
+  closePriceActual?: number | null
+  peakPriceReached?: number | null
+  peakRisePrice?: number | null
+  peakRisePercent?: number | null
+  peakPnlAmount?: number | null
 }
 
 type UiTrade = Trade & {
@@ -76,9 +84,17 @@ const mapDashboardToTrade = (t: DashboardTrade): UiTrade => {
     entryPrice: Number(t.entryPrice ?? 0),
     currentPrice: Number(t.currentPrice ?? t.entryPrice ?? 0),
     closePrice: Number.isFinite(t.closePrice ?? NaN) ? Number(t.closePrice) : undefined,
+    closePriceActual: Number.isFinite(t.closePriceActual ?? NaN) ? Number(t.closePriceActual) : null,
     highPrice: Number.isFinite(t.highPrice ?? NaN) ? Number(t.highPrice) : null,
+    peakPriceReached: Number.isFinite(t.peakPriceReached ?? NaN) ? Number(t.peakPriceReached) : null,
+    peakRisePrice: Number.isFinite(t.peakRisePrice ?? NaN) ? Number(t.peakRisePrice) : null,
+    peakRisePercent: Number.isFinite(t.peakRisePercent ?? NaN) ? Number(t.peakRisePercent) : null,
+    peakPnlAmount: Number.isFinite(t.peakPnlAmount ?? NaN) ? Number(t.peakPnlAmount) : null,
+    pnl: Number.isFinite(t.pnl ?? NaN) ? Number(t.pnl) : Number.isFinite(t.pnlAmount ?? NaN) ? Number(t.pnlAmount) : undefined,
     lastMidPrice: Number(t.lastMidPrice ?? 0),
-    pnlAmount: Number(t.pnlAmount ?? 0),
+    pnlAmount: Number.isFinite(t.pnlAmount ?? NaN) ? Number(t.pnlAmount) : undefined,
+    pnlActual: Number.isFinite(t.pnlActual ?? NaN) ? Number(t.pnlActual) : null,
+    pnlPercentActual: Number.isFinite(t.pnlPercentActual ?? NaN) ? Number(t.pnlPercentActual) : null,
     pl: Number(t.pnlPercent ?? 0),
     status: t.status === 'CLOSED'
       ? 'closed'

@@ -8,6 +8,7 @@ export type Ad = {
   tradeId?: string
   symbol?: string
   right?: 'call' | 'put'
+  
   strike?: number
   expiration?: string
   entryPrice?: number | null

@@ -19,9 +19,14 @@ type WinnerApi = {
   closePriceActual?: number | string | null
   pnl?: number | string | null
   pnlAmount?: number | string | null
+  pnlActual?: number | string | null
   pnlAmountActual?: number | string | null
   pnlPercent?: number | string | null
   pnlPercentActual?: number | string | null
+  peakPriceReached?: number | string | null
+  peakRisePrice?: number | string | null
+  peakRisePercent?: number | string | null
+  peakPnlAmount?: number | string | null
   contracts?: number | string | null
   isSuccessful?: boolean | null
   successRule?: string | null
@@ -66,9 +71,15 @@ const normalizeWinner = (item: WinnerApi, index: number): Trade => {
     currentPrice,
     closePrice,
     closePriceActual: toFiniteNumber(item.closePriceActual),
+    pnl: item.pnl !== undefined ? toNumber(item.pnl, 0) : item.pnlAmount !== undefined ? toNumber(item.pnlAmount, 0) : undefined,
     pnlAmount: item.pnlAmount !== undefined ? toNumber(item.pnlAmount, 0) : item.pnl !== undefined ? toNumber(item.pnl, 0) : undefined,
+    pnlActual: toFiniteNumber(item.pnlActual) ?? toFiniteNumber(item.pnlAmountActual),
     pnlAmountActual: toFiniteNumber(item.pnlAmountActual),
     pnlPercentActual: toFiniteNumber(item.pnlPercentActual),
+    peakPriceReached: toFiniteNumber(item.peakPriceReached),
+    peakRisePrice: toFiniteNumber(item.peakRisePrice),
+    peakRisePercent: toFiniteNumber(item.peakRisePercent),
+    peakPnlAmount: toFiniteNumber(item.peakPnlAmount),
     isSuccessful: typeof item.isSuccessful === 'boolean' ? item.isSuccessful : undefined,
     successRule: item.successRule ?? undefined,
     usedHighPriceForReport: typeof item.usedHighPriceForReport === 'boolean' ? item.usedHighPriceForReport : undefined,
@@ -116,7 +127,7 @@ const Ads = () => {
       setWinningTrades(
         winners
           .filter((trade) =>
-            resolveTradeSuccess({ isSuccessful: trade.isSuccessful, pnlAmount: trade.pnlAmount }).isSuccessful
+            resolveTradeSuccess({ isSuccessful: trade.isSuccessful, pnl: trade.pnl, pnlAmount: trade.pnlAmount }).isSuccessful
           )
           .filter((trade) => !deletedTradeIdsRef.current[trade.id])
       )
@@ -232,13 +243,13 @@ const Ads = () => {
 
         {winningTrades.map((trade) => {
           const tickerIsValid = isValidTicker(String(trade.symbol ?? ''))
-          const successState = resolveTradeSuccess({ isSuccessful: trade.isSuccessful, pnlAmount: trade.pnlAmount })
+          const successState = resolveTradeSuccess({ isSuccessful: trade.isSuccessful, pnl: trade.pnl, pnlAmount: trade.pnlAmount })
           const isSuccessful = successState.isSuccessful
           const pnlPercent = Number(trade.pl ?? 0)
           const currentPrice = Number.isFinite(trade.currentPrice) ? trade.currentPrice : trade.entryPrice
           const closePrice = Number.isFinite(trade.closePrice ?? Number.NaN) ? Number(trade.closePrice) : currentPrice
-          const pnlAmount = toFiniteNumber(trade.pnlAmount) ?? 0
-          const actualPnlAmount = toFiniteNumber(trade.pnlAmountActual)
+          const pnlAmount = toFiniteNumber(trade.pnl) ?? toFiniteNumber(trade.pnlAmount) ?? 0
+          const actualPnlAmount = toFiniteNumber(trade.pnlActual) ?? toFiniteNumber(trade.pnlAmountActual)
           const isActuallyProfitable = (actualPnlAmount ?? pnlAmount) > 0
           const statusLabel = trade.isSuccessful === true ? 'صفقة ناجحة' : isActuallyProfitable ? 'صفقة رابحة' : 'صفقة ناجحة'
 
@@ -302,7 +313,7 @@ const Ads = () => {
                   {pnlAmount >= 0 ? '+' : ''}
                   ${Number(pnlAmount ?? 0).toFixed(2)}
                 </div>
-                {toFiniteNumber(trade.pnlAmountActual) !== undefined && (
+                {(toFiniteNumber(trade.pnlActual) !== undefined || toFiniteNumber(trade.pnlAmountActual) !== undefined) && (
                   <div className="text-xs text-slate-400">
                     الربح الفعلي: {actualPnlAmount! >= 0 ? '+' : ''}${actualPnlAmount!.toFixed(2)}
                   </div>

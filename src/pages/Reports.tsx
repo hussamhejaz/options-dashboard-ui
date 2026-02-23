@@ -4,7 +4,9 @@ import Modal from '../components/ui/Modal'
 import logo from '../assets/images/logo.jpeg'
 import { apiClient } from '../lib/apiClient'
 import {
+  getActualPnlAmount,
   getReportedClosePrice,
+  getReportedElevationPrice,
   getReportedPnlAmount,
   getReportedPnlPercent,
   getTradeSuccessLabel,
@@ -12,6 +14,92 @@ import {
   resolveTradeSuccess,
   toFiniteNumber
 } from '../lib/tradeSuccess'
+
+export type ReportItem = {
+  id: string
+  tradeId: string
+  symbol: string
+  right: string
+  strike: number
+  expiration: string
+  contracts: number
+  entryPrice: number
+  highPrice?: number | null
+  closePrice?: number
+  closePriceActual?: number | null
+  pnl?: number | null
+  pnlAmount?: number
+  pnlPercent?: number
+  pnlActual?: number | null
+  pnlAmountActual?: number | null
+  pnlPercentActual?: number | null
+  peakPriceReached?: number | null
+  peakRisePrice?: number | null
+  peakRisePercent?: number | null
+  peakPnlAmount?: number | null
+  isSuccessful?: boolean | null
+  successRule?: string | null
+  usedHighPriceForReport?: boolean | null
+  status: string
+  reason?: string
+  closedAt?: string
+  periodDaily?: string
+  periodWeekly?: string
+  periodMonthly?: string
+}
+
+const EMPTY_VALUE = '—'
+
+export const formatPrice = (value: number | null | undefined) => {
+  if (!Number.isFinite(value ?? Number.NaN)) return EMPTY_VALUE
+  return Number(value).toFixed(2)
+}
+
+export const formatPercent = (value: number | null | undefined) => {
+  if (!Number.isFinite(value ?? Number.NaN)) return EMPTY_VALUE
+  return `${Number(value).toFixed(2)}%`
+}
+
+export const formatUsd = (value: number | null | undefined) => {
+  if (!Number.isFinite(value ?? Number.NaN)) return EMPTY_VALUE
+  return `${Number(value).toFixed(2)}$`
+}
+
+export const formatWinRate = (value: number | null | undefined) => {
+  if (!Number.isFinite(value ?? Number.NaN)) return '0.00%'
+  return `${Number(value).toFixed(2)}%`
+}
+
+export const PeakMetricsSection = ({ report }: { report: ReportItem }) => (
+  <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2 space-y-2">
+    <p className="text-[11px] text-slate-400">بيانات القمة</p>
+    <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
+      <div className="space-y-1">
+        <p className="text-slate-500">أعلى سعر وصل</p>
+        <p>{formatPrice(report.peakPriceReached)}</p>
+      </div>
+      <div className="space-y-1">
+        <p className="text-slate-500">الارتفاع من الدخول</p>
+        <p>{formatPrice(report.peakRisePrice)}</p>
+      </div>
+      <div className="space-y-1">
+        <p className="text-slate-500">نسبة الارتفاع</p>
+        <p>{formatPercent(report.peakRisePercent)}</p>
+      </div>
+      <div className="space-y-1">
+        <p className="text-slate-500">ربح القمة</p>
+        <p>{formatUsd(report.peakPnlAmount)}</p>
+      </div>
+    </div>
+  </div>
+)
+
+export const UsedHighPriceBadge = ({ enabled }: { enabled?: boolean | null }) =>
+  enabled ? (
+    <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-200">
+      تم اعتماد أعلى سعر في التقرير
+    </div>
+  ) : null
 
 const Reports = () => {
   const todayIso = new Date().toISOString().slice(0, 10)
@@ -22,45 +110,20 @@ const Reports = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [totalPnL, setTotalPnL] = useState(0)
+  const [selectedWinRate, setSelectedWinRate] = useState(0)
   const pageSize = 10
   const summaryRef = useRef<HTMLDivElement | null>(null)
 
   const today = new Date()
   const todayStr = `${today.getDate().toString().padStart(2, '0')}/${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`
 
-  type ReportItem = {
-    id: string
-    tradeId: string
-    symbol: string
-    right: string
-    strike: number
-    expiration: string
-    contracts: number
-    entryPrice: number
-    closePrice?: number
-    closePriceActual?: number | null
-    pnlAmount?: number
-    pnlPercent?: number
-    pnlAmountActual?: number | null
-    pnlPercentActual?: number | null
-    isSuccessful?: boolean | null
-    successRule?: string | null
-    usedHighPriceForReport?: boolean | null
-    status: string
-    reason?: string
-    closedAt?: string
-    periodDaily?: string
-    periodWeekly?: string
-    periodMonthly?: string
-  }
-
   const [reports, setReports] = useState<ReportItem[]>([])
   const [periodSummaries, setPeriodSummaries] = useState<
-    Array<{ id: 'daily' | 'weekly' | 'monthly'; title: string; totalPnL: number; count: number }>
+    Array<{ id: 'daily' | 'weekly' | 'monthly'; title: string; totalPnL: number; count: number; winRate: number }>
   >([
-    { id: 'daily', title: 'يومي', totalPnL: 0, count: 0 },
-    { id: 'weekly', title: 'أسبوعي', totalPnL: 0, count: 0 },
-    { id: 'monthly', title: 'شهري', totalPnL: 0, count: 0 }
+    { id: 'daily', title: 'يومي', totalPnL: 0, count: 0, winRate: 0 },
+    { id: 'weekly', title: 'أسبوعي', totalPnL: 0, count: 0, winRate: 0 },
+    { id: 'monthly', title: 'شهري', totalPnL: 0, count: 0, winRate: 0 }
   ])
   const deleteReport = async (id: string) => {
     try {
@@ -126,29 +189,38 @@ const Reports = () => {
               ? '/reports/weekly'
               : '/reports/monthly'
         const query = selectedDate ? `?date=${selectedDate}` : ''
-        const res = await apiClient.get<{ period: string; totalPnL: number; reports: ReportItem[] }>(
+        const res = await apiClient.get<{ period: string; totalPnL: number; winRate?: number | null; reports: ReportItem[] }>(
           `${path}${query}`
         )
         setReports(
           (res.reports ?? []).map((item) => ({
             ...item,
             isSuccessful: typeof item.isSuccessful === 'boolean' ? item.isSuccessful : undefined,
+            highPrice: toFiniteNumber(item.highPrice),
             closePrice: toFiniteNumber(item.closePrice),
             closePriceActual: toFiniteNumber(item.closePriceActual),
+            pnl: toFiniteNumber(item.pnl) ?? toFiniteNumber(item.pnlAmount),
             pnlAmount: toFiniteNumber(item.pnlAmount),
             pnlPercent: toFiniteNumber(item.pnlPercent),
+            pnlActual: toFiniteNumber(item.pnlActual) ?? toFiniteNumber(item.pnlAmountActual),
             pnlAmountActual: toFiniteNumber(item.pnlAmountActual),
             pnlPercentActual: toFiniteNumber(item.pnlPercentActual),
+            peakPriceReached: toFiniteNumber(item.peakPriceReached),
+            peakRisePrice: toFiniteNumber(item.peakRisePrice),
+            peakRisePercent: toFiniteNumber(item.peakRisePercent),
+            peakPnlAmount: toFiniteNumber(item.peakPnlAmount),
             usedHighPriceForReport:
               typeof item.usedHighPriceForReport === 'boolean' ? item.usedHighPriceForReport : undefined
           }))
         )
         setTotalPnL(res.totalPnL ?? 0)
+        setSelectedWinRate(toFiniteNumber(res.winRate) ?? 0)
       } catch (err) {
         console.error(err)
         setError('تعذّر تحميل التقارير')
         setReports([])
         setTotalPnL(0)
+        setSelectedWinRate(0)
       } finally {
         setLoading(false)
       }
@@ -161,14 +233,32 @@ const Reports = () => {
       try {
         const query = selectedDate ? `?date=${selectedDate}` : ''
         const [d, w, m] = await Promise.all([
-          apiClient.get<{ totalPnL: number; reports: ReportItem[] }>(`/reports/daily${query}`),
-          apiClient.get<{ totalPnL: number; reports: ReportItem[] }>(`/reports/weekly${query}`),
-          apiClient.get<{ totalPnL: number; reports: ReportItem[] }>(`/reports/monthly${query}`)
+          apiClient.get<{ totalPnL: number; winRate?: number | null; reports: ReportItem[] }>(`/reports/daily${query}`),
+          apiClient.get<{ totalPnL: number; winRate?: number | null; reports: ReportItem[] }>(`/reports/weekly${query}`),
+          apiClient.get<{ totalPnL: number; winRate?: number | null; reports: ReportItem[] }>(`/reports/monthly${query}`)
         ])
         setPeriodSummaries([
-          { id: 'daily', title: 'يومي', totalPnL: d.totalPnL ?? 0, count: d.reports?.length ?? 0 },
-          { id: 'weekly', title: 'أسبوعي', totalPnL: w.totalPnL ?? 0, count: w.reports?.length ?? 0 },
-          { id: 'monthly', title: 'شهري', totalPnL: m.totalPnL ?? 0, count: m.reports?.length ?? 0 }
+          {
+            id: 'daily',
+            title: 'يومي',
+            totalPnL: d.totalPnL ?? 0,
+            count: d.reports?.length ?? 0,
+            winRate: toFiniteNumber(d.winRate) ?? 0
+          },
+          {
+            id: 'weekly',
+            title: 'أسبوعي',
+            totalPnL: w.totalPnL ?? 0,
+            count: w.reports?.length ?? 0,
+            winRate: toFiniteNumber(w.winRate) ?? 0
+          },
+          {
+            id: 'monthly',
+            title: 'شهري',
+            totalPnL: m.totalPnL ?? 0,
+            count: m.reports?.length ?? 0,
+            winRate: toFiniteNumber(m.winRate) ?? 0
+          }
         ])
       } catch (err) {
         console.error('Failed to load summaries', err)
@@ -179,13 +269,9 @@ const Reports = () => {
 
   const summaryStats = useMemo(() => {
     const total = filteredTradeReports.length
-    const wins = filteredTradeReports.filter((t) =>
-      resolveTradeSuccess({ isSuccessful: t.isSuccessful, pnlAmount: t.pnlAmount }).isSuccessful
-    ).length
-    const net = filteredTradeReports.reduce((acc, t) => acc + (t.pnlAmount ?? 0), 0)
-    const winRate = total ? Math.round((wins / total) * 100) : 0
-    return { total, wins, net, winRate }
-  }, [filteredTradeReports])
+    const net = filteredTradeReports.reduce((acc, t) => acc + (getReportedPnlAmount(t) ?? 0), 0)
+    return { total, net, winRate: selectedWinRate }
+  }, [filteredTradeReports, selectedWinRate])
 
   return (
     <div className="space-y-8" dir="rtl">
@@ -311,12 +397,12 @@ const Reports = () => {
               {filteredTradeReports.map((t) => {
                 const optionType = (t.right ?? (t as any).type ?? '').toUpperCase()
                 const typeLabel = optionType || '--'
-                const successState = resolveTradeSuccess({ isSuccessful: t.isSuccessful, pnlAmount: t.pnlAmount })
+                const successState = resolveTradeSuccess({ isSuccessful: t.isSuccessful, pnl: t.pnl, pnlAmount: t.pnlAmount })
                 const isSuccessful = successState.isSuccessful
                 const reportedClosePrice = getReportedClosePrice(t)
                 const reportedPnlPercent = getReportedPnlPercent(t) ?? 0
                 const actualClose = toFiniteNumber(t.closePriceActual)
-                const actualPnlAmount = toFiniteNumber(t.pnlAmountActual)
+                const actualPnlAmount = getActualPnlAmount(t)
                 const actualPnlPercent = toFiniteNumber(t.pnlPercentActual)
                 const showActualOutcome = hasActualOutcome(t)
                 return (
@@ -324,7 +410,7 @@ const Reports = () => {
                     <div className="flex items-center justify-between">
                       <h4 className="text-base font-semibold text-white">{t.symbol} ({typeLabel})</h4>
                       <Badge variant={isSuccessful ? 'emerald' : 'red'}>
-                        {getTradeSuccessLabel({ isSuccessful: t.isSuccessful, pnlAmount: t.pnlAmount })}
+                        {getTradeSuccessLabel({ isSuccessful: t.isSuccessful, pnl: t.pnl, pnlAmount: t.pnlAmount })}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-400">
@@ -363,6 +449,7 @@ const Reports = () => {
                         {(getReportedPnlAmount(t) ?? 0).toFixed(2)}
                       </span>
                     </div>
+                    <PeakMetricsSection report={t} />
                     {showActualOutcome && (
                       <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-2 space-y-1">
                         <p className="text-[11px] text-slate-400">الإغلاق الفعلي</p>
@@ -384,11 +471,7 @@ const Reports = () => {
                         </div>
                       </div>
                     )}
-                    {t.usedHighPriceForReport && (
-                      <div className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] text-sky-200">
-                        تم اعتماد أعلى سعر في التقرير
-                      </div>
-                    )}
+                    <UsedHighPriceBadge enabled={t.usedHighPriceForReport} />
                     <div className="flex justify-end">
                       <button
                         type="button"
@@ -445,8 +528,11 @@ const Reports = () => {
                 )}
               </div>
               <div className="space-y-1">
-                <p className="text-xs" style={{ color: '#a78bfa' }}>نسبة الفوز</p>
-                <p className="text-xl" style={{ color: '#ffffff' }}>{summaryStats.winRate}%</p>
+                <p className="text-xs" style={{ color: '#a78bfa' }}>إجمالي نسب الربح</p>
+                <p className="text-xl" style={{ color: '#ffffff' }}>{formatWinRate(summaryStats.winRate)}</p>
+                <p className="text-[10px] leading-4" style={{ color: '#a78bfa' }}>
+                  مجموع نسب الصفقات المؤهلة (قد تتجاوز 100%)
+                </p>
               </div>
             </div>
           </div>
@@ -481,7 +567,7 @@ const Reports = () => {
                 const typeLabel = optionType || '--'
                 const isCall = optionType === 'CALL'
                 const entry = Number.isFinite(t.entryPrice) ? Number(t.entryPrice) : 0
-                const current = getReportedClosePrice(t) ?? entry
+                const current = getReportedElevationPrice(t) ?? entry
                 const profit = getReportedPnlAmount(t) ?? 0
                 const isProfit = profit >= 0
                 return (

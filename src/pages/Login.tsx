@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { setAuthenticated, isAuthenticated } from '../components/auth/RequireAuth'
+import { setAuthenticated, isAuthenticated, isValidPassword } from '../components/auth/RequireAuth'
 import logo from '../assets/images/logo.jpeg'
 
 const Login = () => {
@@ -20,7 +20,7 @@ const Login = () => {
     e.preventDefault()
     setLoading(true)
     const redirectTo = (location.state as any)?.from || '/'
-    if (password === 'Mm1994') {
+    if (isValidPassword(password)) {
       setAuthenticated()
       navigate(redirectTo, { replace: true })
     } else {

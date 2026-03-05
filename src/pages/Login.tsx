@@ -20,7 +20,7 @@ const Login = () => {
     e.preventDefault()
     setLoading(true)
     const redirectTo = (location.state as any)?.from || '/'
-    if (password === 'Rukn2030') {
+    if (password === 'Mm1994') {
       setAuthenticated()
       navigate(redirectTo, { replace: true })
     } else {

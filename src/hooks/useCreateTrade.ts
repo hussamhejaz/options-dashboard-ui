@@ -73,10 +73,7 @@ export const useCreateTrade = () => {
         right: payload.right,
         strike: payload.strike,
         expiration: payload.expiration,
-
-        contracts: payload.contracts,
-        entryPrice: payload.entryPrice,
-        stopLoss: payload.stopLoss
+        contracts: payload.contracts
       }
       const created = await apiClient.post<ApiTrade>('/trades', payloadForApi, { timeoutMs: 120000 })
       return toTrade(created, payloadForApi)
